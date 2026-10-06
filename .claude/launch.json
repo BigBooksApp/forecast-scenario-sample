@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "forecast",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-c",
+        "import http.server as h,functools as f\nclass H(h.SimpleHTTPRequestHandler):\n    def end_headers(s): s.send_header('Cache-Control','no-store'); super().end_headers()\nh.ThreadingHTTPServer(('',5174),f.partial(H,directory='public')).serve_forever()"
+      ],
+      "port": 5174
+    }
+  ]
+}

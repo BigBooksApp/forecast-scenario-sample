@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forecast · BigBooks</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%AD%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">BigBooks</p>
+        <h1>Forecast &amp; Scenarios</h1>
+      </div>
+      <div class="topbar-actions" id="global-controls" hidden>
+        <div class="seg" role="group" aria-label="Perspective">
+          <button type="button" data-perspective="SINGLETON" class="is-active" title="The acting party's own books">Just me</button>
+          <button type="button" data-perspective="COMPOSITE" title="The acting party and its member parties">Household</button>
+        </div>
+        <select id="unit" aria-label="Currency">
+          <option>USD</option><option>EUR</option><option>GBP</option><option>CAD</option>
+        </select>
+        <button id="signout" class="ghost-btn" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <section class="connect card" id="connect" hidden>
+      <h2 id="connect-title">Connect your BigBooks account</h2>
+      <p class="muted" id="connect-msg">Sign in to project your balances, run scenarios and plan debt payoff. The token lives only in this browser tab.</p>
+      <button id="connect-btn" class="primary-btn" type="button">Sign in with BigBooks</button>
+      <p class="muted small">or <a href="#demo" id="demo-link">preview with demo data</a></p>
+      <details id="paste-token" hidden>
+        <summary>Use an access token (local development)</summary>
+        <form id="paste-form" class="stack">
+          <label>Access token <textarea name="token" rows="3" required spellcheck="false"></textarea></label>
+          <label>Your party id <input name="party" required pattern="[0-9a-fA-F-]{36}" placeholder="bigbooks:party claim from userInfo" /></label>
+          <button class="primary-btn" type="submit">Use token</button>
+        </form>
+      </details>
+    </section>
+
+    <div id="app" hidden>
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="forecast" class="is-active">Cash forecast</button>
+        <button role="tab" data-tab="upcoming">Upcoming</button>
+        <button role="tab" data-tab="month">This month</button>
+        <button role="tab" data-tab="scenarios">Scenarios</button>
+        <button role="tab" data-tab="compare">Compare</button>
+        <button role="tab" data-tab="debt">Debt payoff</button>
+        <button role="tab" data-tab="planning">Planning</button>
+      </nav>
+      <div id="banner" class="banner" hidden></div>
+
+      <!-- ───────────────────────── Cash forecast ───────────────────────── -->
+      <section class="tab" id="tab-forecast">
+        <div class="toolbar">
+          <label>Look ahead
+            <select id="fc-days"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="180">6 months</option><option value="365">1 year</option></select>
+          </label>
+          <label class="inline" title="Each cash account's everyday, non-recurring activity, spread over the days of each month"><input type="checkbox" id="fc-baseline" checked /> include everyday spending</label>
+          <span class="muted" id="fc-range"></span>
+        </div>
+        <div class="error" hidden></div>
+        <div class="tiles" id="fc-tiles"></div>
+        <div class="card">
+          <div class="card-head"><h2>Net position</h2><span class="muted">assets minus liabilities, converted</span></div>
+          <figure class="chart" id="fc-chart"><div class="placeholder">Loading…</div></figure>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Accounts</h2><span class="muted">select a row to plot it</span></div>
+          <div class="table-scroll"><table class="data" id="fc-accounts"></table></div>
+          <figure class="chart" id="fc-account-chart" hidden></figure>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>What if…</h2><span class="muted">one-off flows for this run only — nothing is saved</span></div>
+          <div id="wi-rows" class="stack"></div>
+          <div class="row-actions">
+            <button class="ghost-btn" type="button" id="wi-add">+ Add a flow</button>
+            <button class="primary-btn" type="button" id="wi-run">Run what-if</button>
+          </div>
+          <div class="error" hidden></div>
+          <div id="wi-result"></div>
+        </div>
+      </section>
+
+      <!-- ───────────────────────── Upcoming ───────────────────────── -->
+      <section class="tab" id="tab-upcoming" hidden>
+        <div class="toolbar">
+          <label>Next
+            <select id="up-days"><option value="14">14 days</option><option value="30" selected>30 days</option><option value="60">60 days</option><option value="90">90 days</option></select>
+          </label>
+          <span class="muted" id="up-summary"></span>
+        </div>
+        <div class="error" hidden></div>
+        <div class="card"><div class="card-head"><h2>Expected charges, deposits and loan payments</h2></div>
+          <div class="table-scroll"><table class="data" id="up-table"></table></div></div>
+        <div class="card"><div class="card-head"><h2>Planned transactions</h2><span class="muted">things you know are coming — a tax bill, a bonus — carried by every forecast</span></div>
+          <div class="table-scroll"><table class="data" id="planned"></table></div>
+          <form id="planned-form" class="form-grid">
+            <label>What <input name="label" required placeholder="Property tax" /></label>
+            <label>From <select name="fromAccountId"></select></label>
+            <label>To <select name="toAccountId"></select></label>
+            <label>Amount <input name="amount" type="number" min="0.01" step="0.01" required /></label>
+            <label>On <input name="date" type="date" required /></label>
+            <label>Repeats <select name="cadenceMonths"><option value="">Once</option><option value="1">Monthly</option><option value="3">Quarterly</option><option value="6">Twice a year</option><option value="12">Yearly</option></select></label>
+            <label>Until <input name="endDate" type="date" /></label>
+            <div class="row-actions"><button class="primary-btn" type="submit">Add</button><button class="ghost-btn" type="button" id="planned-cancel" hidden>Cancel edit</button></div>
+          </form>
+        </div>
+        <div class="card"><div class="card-head"><h2>Declared recurring charges</h2><span class="muted">tell the calendar a charge recurs when it can't tell yet — an annual premium seen once</span></div>
+          <div class="table-scroll"><table class="data" id="declarations"></table></div>
+          <form id="declare-form" class="form-grid">
+            <label>Account <select name="accountId" required></select></label>
+            <label>Merchant <input name="merchantName" required list="declare-merchants" placeholder="as your transactions name it" /></label>
+            <label>Amount (optional) <input name="amount" type="number" min="0.01" step="0.01" placeholder="every charge" /></label>
+            <label>Every <select name="frequency"><option>MONTHLY</option><option>ANNUAL</option><option>QUARTERLY</option><option>SEMIANNUAL</option><option>BIMONTHLY</option><option>BIWEEKLY</option><option>WEEKLY</option></select></label>
+            <div class="row-actions"><button class="primary-btn" type="submit">Declare</button></div>
+            <datalist id="declare-merchants"></datalist>
+          </form>
+        </div>
+        <div class="card"><div class="card-head"><h2>Subscription audit</h2><span class="muted">price changes, lapsed streams, duplicates</span></div>
+          <div id="audit"></div></div>
+      </section>
+
+      <!-- ───────────────────────── This month ───────────────────────── -->
+      <section class="tab" id="tab-month" hidden>
+        <div class="toolbar">
+          <label>Month <input type="month" id="me-month" /></label>
+          <span class="muted" id="me-summary"></span>
+        </div>
+        <div class="error" hidden></div>
+        <div class="tiles" id="me-tiles"></div>
+        <div class="card"><div class="card-head"><h2>Where each category ends the month</h2><span class="muted">posted so far, plus known streams and the everyday run-rate for the days left</span></div>
+          <div class="table-scroll"><table class="data" id="me-table"></table></div></div>
+      </section>
+
+      <!-- ───────────────────────── Scenarios ───────────────────────── -->
+      <section class="tab" id="tab-scenarios" hidden>
+        <div class="error" hidden></div>
+        <div class="split">
+          <aside class="card list-card">
+            <div class="card-head"><h2>Scenarios</h2><button class="ghost-btn sm" id="sc-new" type="button">+ New</button></div>
+            <ul class="pick-list" id="sc-list"></ul>
+          </aside>
+          <div id="sc-detail">
+            <div class="card placeholder">Select a scenario, or create one.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───────────────────────── Compare ───────────────────────── -->
+      <section class="tab" id="tab-compare" hidden>
+        <div class="error" hidden></div>
+        <div class="card">
+          <div class="card-head"><h2>Scenarios</h2><span class="muted">the first one you tick is the baseline</span></div>
+          <div id="cmp-picks" class="chips"></div>
+          <div class="form-grid">
+            <label>Also run at returns (%) <input id="cmp-return" placeholder="e.g. 4, 8" /></label>
+            <label>…inflation (%) <input id="cmp-inflation" placeholder="e.g. 4" /></label>
+            <label>…income growth (%) <input id="cmp-income" placeholder="e.g. 1" /></label>
+            <label>…income tax (%) <input id="cmp-tax" placeholder="e.g. 22" /></label>
+          </div>
+          <div class="row-actions">
+            <button class="primary-btn" id="cmp-run" type="button">Compare side by side</button>
+            <button class="ghost-btn" id="cmp-together" type="button" title="Run the ticked scenarios as one combined plan (e.g. a household plus its business)">Run together</button>
+            <button class="ghost-btn" id="cmp-sim-together" type="button" title="Run the ticked scenarios together over many market paths">Simulate together</button>
+          </div>
+        </div>
+        <div id="cmp-result"></div>
+      </section>
+
+      <!-- ───────────────────────── Debt ───────────────────────── -->
+      <section class="tab" id="tab-debt" hidden>
+        <div class="toolbar">
+          <label>Extra each month <input id="debt-extra" type="number" min="0" step="50" value="200" /></label>
+          <div class="seg" id="debt-quick"><button type="button" data-v="0">$0</button><button type="button" data-v="200">$200</button><button type="button" data-v="500">$500</button><button type="button" data-v="1000">$1,000</button></div>
+        </div>
+        <div class="error" hidden></div>
+        <div id="debt-result"></div>
+      </section>
+
+      <!-- ───────────────────────── Planning ───────────────────────── -->
+      <section class="tab" id="tab-planning" hidden>
+        <div class="error" hidden></div>
+        <div class="card">
+          <div class="card-head"><h2>Planning assumptions</h2><span class="muted">default rates for every scenario without its own; blank = default</span></div>
+          <form id="assump-form" class="form-grid">
+            <label>Inflation (% / yr) <input name="inflationRate" type="number" step="0.1" /><span class="src" data-src="inflation"></span></label>
+            <label>Investment return (% / yr) <input name="returnRate" type="number" step="0.1" /><span class="src" data-src="investmentReturn"></span></label>
+            <label>Income growth (% / yr) <input name="incomeGrowthRate" type="number" step="0.1" /><span class="src" data-src="incomeGrowth"></span></label>
+            <label>Income tax on IRA / 401(k) withdrawals (%) <input name="taxRate" type="number" step="0.1" min="0" max="99" /><span class="src" data-src="incomeTax"></span></label>
+            <label>Market volatility (% / yr) <input name="volatility" type="number" step="0.1" min="0" max="100" /><span class="src" data-src="volatility"></span></label>
+            <div class="row-actions"><button class="primary-btn" type="submit">Save assumptions</button></div>
+          </form>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>People</h2><span class="muted">scenarios can be dated by their age — "retire at 62"</span></div>
+          <table class="data" id="persons"></table>
+          <form id="person-form" class="form-grid">
+            <label>Name <input name="name" required /></label>
+            <label>Birth date <input name="birthDate" type="date" required /></label>
+            <div class="row-actions"><button class="primary-btn" type="submit">Add person</button></div>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <dialog id="editor"></dialog>
+    <footer class="foot">Projections from the BigBooks API · nothing here moves money</footer>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
