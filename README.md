@@ -46,8 +46,8 @@ from the first:
 calls Plaid with **a client id and secret you stored yourself**, and the Plaid usage is billed to
 your Plaid account. Add them at **<https://www.bigbooks.app/data-secrets>** (sign-in required); you
 get both from the [Plaid dashboard](https://dashboard.plaid.com/developers/keys). Without them the
-first call of the link flow fails with `500 internal_error` and the message *"Plaid secret could
-not be resolved"*.
+first call of the link flow fails with `400` and the error code `missing_credentials`, and
+the app says what to do.
 
 - Credentials are stored **per party**, and the party that matters is the one that **owns the
   OAuth client** this app signs in with: the account you were signed in as at
@@ -74,8 +74,8 @@ Browser (this static app)
 
 Linking follows the spec's request bodies: `PlaidPublicTokenBody` (`clientName`, `language`,
 `countryCodes`, `clientUserId`), then `PlaidAccessTokenBody` (`publicToken`, `party`,
-`linkSessionId`, `webhook`, `institution`). The exchange's `webhook` is the API's own
-`…/v1/plaid/webhook`, matching what BigBooks registers when it mints the link token. The access
+`linkSessionId`, `institution`). There is no webhook to send: BigBooks sets each item's webhook to
+its own receiver, which then keeps the item current. The access
 token lives only in `sessionStorage` for the current tab.
 
 ## What's in it
