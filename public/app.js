@@ -1185,11 +1185,10 @@ async function openPlaidLink() {
       onSuccess: async (publicToken, metadata) => {
         try {
           const inst = metadata.institution || {};
-          // PlaidAccessTokenBody takes exactly these fields; the Link metadata's accounts aren't one of them.
+          // PlaidAccessTokenBody takes exactly these fields. No webhook: BigBooks sets the item's
+          // webhook to its own receiver.
           await api.plaidExchange({
             publicToken, party: state.party, linkSessionId: metadata.link_session_id,
-            // The API's own webhook endpoint, the one it registers when minting the link token.
-            webhook: `${CONFIG.API}/v1/plaid/webhook`,
             institution: inst.institution_id ? { id: inst.institution_id, name: inst.name } : null,
           });
           flash('Account linked — importing balances and transactions…');
@@ -1208,7 +1207,7 @@ async function openPlaidLink() {
   } catch (e) {
     setLinkBusy(false);
     if (e instanceof AuthExpired) return showConnect('Your session expired. Please sign in again.');
-    showBanner(`Could not start Plaid Link: ${describeError(e)}${e.code === 'internal_error' ? '<br><span class="muted">If it says the Plaid secret could not be resolved, store your Plaid client id and secret on your BigBooks account first.</span>' : ''}`);
+    showBanner(`Could not start Plaid Link: ${describeError(e)}${e.code === 'missing_credentials' ? '<br><span class="muted">Store your Plaid client id and secret on your BigBooks account first; BigBooks ships no Plaid credentials.</span>' : ''}`);
   }
 }
 // Nothing linked means nothing to project: say so up front instead of showing empty charts.
