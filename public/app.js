@@ -1163,6 +1163,60 @@ async function loadAccounts() {
   api.upcoming({ days: 90 }).then((u) => { state.merchants = [...new Set(u.items.map((i) => i.merchantName).filter(Boolean))]; }).catch(() => {});
 }
 
+// ============================================================ Plaid Link
+// POST /v1/plaid/public/token → Plaid.create({ token }) → the user picks a bank → onSuccess →
+// POST /v1/plaid/access/token, which exchanges the public token server-side and imports the item.
+// No Plaid credential ever reaches the browser: BigBooks calls Plaid with the client id and
+// secret stored on the account (see the README's "Bring your own Plaid credentials").
+let linking = false;
+function setLinkBusy(busy) {
+  linking = busy;
+  for (const el of [$('#link-btn'), $('#empty-link-btn')]) { el.disabled = busy; el.textContent = busy ? 'Opening Plaid…' : el.dataset.label; }
+}
+async function openPlaidLink() {
+  if (linking) return;
+  if (state.demo) return flash('Demo mode — linking is disabled.');
+  if (!window.Plaid) return showBanner('Plaid Link failed to load — check your network or ad blocker, then reload.');
+  setLinkBusy(true);
+  try {
+    const { token } = await api.plaidLinkToken({ clientName: 'BigBooks Forecast', language: 'en', countryCodes: ['US'], clientUserId: state.party });
+    window.Plaid.create({
+      token,
+      onSuccess: async (publicToken, metadata) => {
+        try {
+          const inst = metadata.institution || {};
+          // PlaidAccessTokenBody takes exactly these fields; the Link metadata's accounts aren't one of them.
+          await api.plaidExchange({
+            publicToken, party: state.party, linkSessionId: metadata.link_session_id,
+            // The API's own webhook endpoint, the one it registers when minting the link token.
+            webhook: `${CONFIG.API}/v1/plaid/webhook`,
+            institution: inst.institution_id ? { id: inst.institution_id, name: inst.name } : null,
+          });
+          flash('Account linked — importing balances and transactions…');
+          $('#empty').hidden = true;
+          reloadAll();
+        } catch (e) {
+          if (e instanceof AuthExpired) return showConnect('Your session expired. Please sign in again.');
+          showBanner(`Linking failed: ${describeError(e)}`);
+        } finally { setLinkBusy(false); }
+      },
+      onExit: (err) => {
+        setLinkBusy(false);
+        if (err) showBanner(`Plaid Link: ${esc(err.display_message || err.error_message || err.error_code || 'exited before finishing.')}`);
+      },
+    }).open();
+  } catch (e) {
+    setLinkBusy(false);
+    if (e instanceof AuthExpired) return showConnect('Your session expired. Please sign in again.');
+    showBanner(`Could not start Plaid Link: ${describeError(e)}${e.code === 'internal_error' ? '<br><span class="muted">If it says the Plaid secret could not be resolved, store your Plaid client id and secret on your BigBooks account first.</span>' : ''}`);
+  }
+}
+// Nothing linked means nothing to project: say so up front instead of showing empty charts.
+async function checkLinkedAccounts() {
+  try { $('#empty').hidden = (await api.plaidItems()).items.some((i) => i.itemStatus !== 'REMOVED'); } catch (e) { console.warn('plaid items', e); }
+}
+function showBanner(html) { $('#banner').innerHTML = html; $('#banner').hidden = false; }
+
 let toastTimer;
 function flash(msg) {
   let t = $('#toast');
@@ -1182,12 +1236,18 @@ function showConnect(msg) {
 async function startApp(send, banner) {
   api = endpoints(send, state);
   $('#connect').hidden = true; $('#app').hidden = false; $('#global-controls').hidden = false;
-  if (banner) { $('#banner').innerHTML = banner; $('#banner').hidden = false; }
+  if (banner) showBanner(banner);
+  if (!state.demo) checkLinkedAccounts();
   await loadAccounts();
   showTab('forecast');
 }
 
 function wireUi() {
+  $('#link-btn').addEventListener('click', openPlaidLink);
+  $('#empty-link-btn').addEventListener('click', openPlaidLink);
+  // Demo mode is read once at start-up, so toggling #demo has to reload rather than leave a
+  // signed-out page sitting behind a hash it never looked at again.
+  window.addEventListener('hashchange', () => window.location.reload());
   $$('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
   $$('[data-perspective]').forEach((b) => b.addEventListener('click', () => {
     $$('[data-perspective]').forEach((x) => x.classList.toggle('is-active', x === b));
@@ -1201,7 +1261,6 @@ function wireUi() {
     setToken({ access_token: e.target.token.value.trim(), expires_in: 3600 }, e.target.party.value.trim());
     location.reload();
   });
-  $('#demo-link').addEventListener('click', () => setTimeout(() => location.reload()));
   $('#fc-days').addEventListener('change', loadForecast);
   $('#fc-baseline').addEventListener('change', () => { state.lastForecast = null; loadForecast(); });
   $('#planned-form').addEventListener('submit', savePlanned);
@@ -1227,6 +1286,7 @@ async function init() {
   if (location.hash.includes('demo')) {
     const { demoSend, DEMO_PARTY } = await import('./demo.js');
     state.party = DEMO_PARTY;
+    state.demo = true;
     return startApp(demoSend, '<strong>Demo data</strong> — a synthetic household answering in the API\'s response shapes. Remove <code>#demo</code> from the URL and sign in for your own books.');
   }
   try { await completeRedirect(); } catch (e) { showConnect(); $('#connect-msg').textContent = e.message; return; }

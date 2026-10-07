@@ -51,6 +51,12 @@ export function endpoints(send, ctx) {
       income_growth_rate: incomeGrowthRates, tax_rate: taxRates, step, unit_type: unitType, perspective: perspective(),
     }),
 
+    // ---- Plaid Link: the spec declares no X-Acting-Party-ID on the two token calls; the
+    // exchange names the party in its body instead.
+    plaidItems: () => get('/v1/plaid/items'),
+    plaidLinkToken: (body) => send('POST', '/v1/plaid/public/token', { body }).then((r) => r.data),
+    plaidExchange: (body) => send('POST', '/v1/plaid/access/token', { body }).then((r) => r.data),
+
     // ---- planning
     assumptions: () => send('GET', '/v1/planning/assumptions', { party: party() }),
     saveAssumptions: (version, body) => send('PUT', '/v1/planning/assumptions', { party: party(), ifMatch: version, body }),

@@ -22,6 +22,7 @@
         <select id="unit" aria-label="Currency">
           <option>USD</option><option>EUR</option><option>GBP</option><option>CAD</option>
         </select>
+        <button id="link-btn" class="primary-btn" type="button" data-label="+ Link account">+ Link account</button>
         <button id="signout" class="ghost-btn" type="button">Sign out</button>
       </div>
     </header>
@@ -52,6 +53,11 @@
         <button role="tab" data-tab="planning">Planning</button>
       </nav>
       <div id="banner" class="banner" hidden></div>
+      <section class="connect card" id="empty" hidden>
+        <h2>No linked accounts yet</h2>
+        <p class="muted">Forecasts and scenarios project your own books, so there is nothing to project until a bank, card or investment account is linked.</p>
+        <button id="empty-link-btn" class="primary-btn" type="button" data-label="+ Link an account">+ Link an account</button>
+      </section>
 
       <!-- ───────────────────────── Cash forecast ───────────────────────── -->
       <section class="tab" id="tab-forecast">
@@ -210,6 +216,7 @@
     <dialog id="editor"></dialog>
     <footer class="foot">Projections from the BigBooks API · nothing here moves money</footer>
   </main>
+  <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

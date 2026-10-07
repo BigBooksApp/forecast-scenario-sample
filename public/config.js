@@ -1,18 +1,18 @@
 // BigBooks Forecast & Scenarios configuration.
 //
-// This app targets a locally running API by default. Point API at another
+// This app targets the BigBooks staging environment. Point API at another
 // environment (https://api.bigbooks.app) together with the matching ISSUER.
 //
 // CLIENT_ID is a PUBLIC OAuth client (token endpoint auth method "none", PKCE / S256)
 // registered at {ISSUER}/clients with this app's URL as a redirect URI.
 // No client secret goes here — this file ships to the browser.
 
-const ISSUER = 'http://localhost:9000';   // the authorization server whose tokens the API accepts
+const ISSUER = 'https://staging.bigbooks.app';   // the authorization server whose tokens the API accepts
 
 export const CONFIG = {
   CLIENT_ID: '',                           // <-- your public client_id
 
-  API: 'http://localhost:8080/api',
+  API: 'https://staging.bigbooks.app/api',
   ISSUER,
   AUTHORIZE_URL: `${ISSUER}/oauth2/authorize`,
   TOKEN_URL: `${ISSUER}/oauth2/token`,
