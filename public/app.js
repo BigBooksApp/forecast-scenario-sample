@@ -733,7 +733,7 @@ function openEditor(existing) {
     const isRmd = f.scenarioFlowType === 'RMD';
     const el = document.createElement('div');
     el.className = 'flow-row'; el._flow = f;
-    const input = (name, type = 'number', extra = '') => fields.includes(name) ? `<label>${L[name]} <input name="${name}" type="${type}" step="any" value="${f[name] ?? ''}" ${extra}/></label>` : '';
+    const input = (name, type = 'number', extra = '') => fields.includes(name) ? `<label>${L[name]} <input name="${name}" type="${type}" step="any" value="${esc(f[name] ?? '')}" ${extra}/></label>` : '';
     el.innerHTML = `<div class="head"><span><span class="badge plain">${flowLabel(f.scenarioFlowType)}</span>${f.matchOf ? ' <span class="sub">employer match</span>' : ''}</span><button type="button" class="link-btn sm">Remove</button></div>
       <div class="form-grid">
         <label>Label <input name="label" value="${esc(f.label ?? '')}" placeholder="What is it?" /></label>
@@ -764,7 +764,7 @@ function openEditor(existing) {
   }
 
   function hypoOptions(selectedKey, taxDeferredOnly = false) {
-    const opts = $$('.acct-row', dlg).filter((r) => !taxDeferredOnly || TAX_DEFERRED.has($('[name=assetType]', r)?.value)).map((r) => `<option value="hypo:${r._acct.key}"${r._acct.key === selectedKey ? ' selected' : ''}>${esc($('[name=name]', r).value || 'new account')}</option>`).join('');
+    const opts = $$('.acct-row', dlg).filter((r) => !taxDeferredOnly || TAX_DEFERRED.has($('[name=assetType]', r)?.value)).map((r) => `<option value="hypo:${esc(r._acct.key)}"${r._acct.key === selectedKey ? ' selected' : ''}>${esc($('[name=name]', r).value || 'new account')}</option>`).join('');
     return opts ? `<optgroup label="Planned in this scenario" data-hypo>${opts}</optgroup>` : '';
   }
 
