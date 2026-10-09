@@ -41,6 +41,8 @@ const TAX_DEFERRED = new Set(['IRA', 'SEP_IRA', 'SIMPLE_IRA', 'SARSEP', 'KEOGH',
   'RRSP', 'RRIF', 'LIRA', 'LRSP', 'LIF', 'LRIF', 'RLIF', 'PRIF', 'SIPP', 'FIXED_ANNUITY', 'VARIABLE_ANNUITY', 'OTHER_ANNUITY']);
 for (const a of Object.values(acct)) a.taxDeferred = TAX_DEFERRED.has(a.assetType);
 // RMDs: required age by birth year, and the IRS uniform lifetime divisor by age at the year's end.
+// assetTypes whose WITHDRAWAL before the owner is 59½ carries the 10% early-withdrawal penalty.
+const US_RETIREMENT = new Set(['IRA', 'SEP_IRA', 'SIMPLE_IRA', 'SARSEP', 'KEOGH', '_401A', '_401K', '_403B', 'PROFIT_SHARING_PLAN', 'PENSION', 'RETIREMENT', 'FIXED_ANNUITY', 'VARIABLE_ANNUITY', 'OTHER_ANNUITY', 'ROTH', 'ROTH_401K']);
 const rmdStartAge = (birthDate) => { const y = Number(birthDate.slice(0, 4)); return y < 1951 ? 72 : y < 1960 ? 73 : 75; };
 const UNIFORM = { 72: 27.4, 73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9, 78: 22.0, 79: 21.1, 80: 20.2, 81: 19.4, 82: 18.5, 83: 17.7, 84: 16.8, 85: 16.0, 86: 15.2, 87: 14.4, 88: 13.7, 89: 12.9, 90: 12.2, 91: 11.5, 92: 10.8, 93: 10.1, 94: 9.5, 95: 8.9, 96: 8.4, 97: 7.8, 98: 7.3, 99: 6.8, 100: 6.4 };
 const uniformDivisor = (age) => UNIFORM[age] ?? (age < 72 ? 27.4 : Math.max(2, 6.4 - (age - 100) * 0.4));
@@ -49,6 +51,8 @@ const bookById = new Map(books.map((a) => [a.id, a]));
 for (const a of books) if (a.apr && a.term) a.payment = round2(pmt(a.opening, a.apr, a.term));
 
 // Recurring streams the calendar knows about.
+// UpcomingItemResponse.cadenceDays: the declared frequency's nominal gap.
+const GAP = { WEEKLY: 7, BIWEEKLY: 14, BIMONTHLY: 60.88, MONTHLY: 30.44, QUARTERLY: 91.31, SEMIANNUAL: 182.62, ANNUAL: 365.25 };
 const STREAMS = [
   { key: 'chk', merchant: 'Acme Corp Payroll', amount: 3900, every: 14, first: nextWeekday(TODAY, 5), recurrence: 'RECURRING', frequency: 'BIWEEKLY', income: true },
   { key: 'chk', merchant: 'Metro Electric', amount: -142.5, dom: 20, recurrence: 'RECURRING', frequency: 'MONTHLY' },
@@ -93,28 +97,28 @@ function seedScenarios() {
   const alex = persons[0].id;
   const retire = (name, age) => {
     const b = {
-      name, horizonPersonId: alex, horizonAge: 95, flows: [
-        { key: 'c401', flowType: 'CONTRIBUTION', accountId: acct.k401.id, targetAccountId: acct.chk.id, label: '401(k) contributions', amount: 900, cadenceMonths: 1, startDate: TODAY, personId: alex, endAge: age - 1, rate: 2.5 },
-        { key: 'match', flowType: 'CONTRIBUTION', accountId: acct.k401.id, label: 'Employer match', percent: 50, ceilingAmount: 450, matchOf: 'c401' },
-        { key: 'draw', flowType: 'WITHDRAWAL', accountId: acct.brk.id, targetAccountId: acct.chk.id, label: 'Retirement living expenses', amount: 3600, cadenceMonths: 1, personId: alex, startAge: age, fallbackAccountIds: [acct.k401.id, acct.roth.id] },
-        { key: 'ef', flowType: 'TARGET', accountId: acct.sav.id, label: 'Emergency fund', amount: 45000, startDate: addMonths(TODAY, 30) },
-        { key: 'save', flowType: 'TRANSFER', accountId: acct.chk.id, targetAccountId: acct.sav.id, label: 'Monthly savings sweep', amount: 250, cadenceMonths: 1, startDate: addDays(TODAY, 10) },
+      name, horizonPersonId: alex, horizonAge: 95, scenarioFlows: [
+        { key: 'c401', scenarioFlowType: 'CONTRIBUTION', accountId: acct.k401.id, targetAccountId: acct.chk.id, label: '401(k) contributions', amount: 900, cadenceMonths: 1, startDate: TODAY, personId: alex, endAge: age - 1, rate: 2.5 },
+        { key: 'match', scenarioFlowType: 'CONTRIBUTION', accountId: acct.k401.id, label: 'Employer match', percent: 50, ceilingAmount: 450, matchOf: 'c401' },
+        { key: 'draw', scenarioFlowType: 'WITHDRAWAL', accountId: acct.brk.id, targetAccountId: acct.chk.id, label: 'Retirement living expenses', amount: 3600, cadenceMonths: 1, personId: alex, startAge: age, fallbackAccountIds: [acct.k401.id, acct.roth.id] },
+        { key: 'ef', scenarioFlowType: 'TARGET', accountId: acct.sav.id, label: 'Emergency fund', amount: 45000, startDate: addMonths(TODAY, 30) },
+        { key: 'save', scenarioFlowType: 'TRANSFER', accountId: acct.chk.id, targetAccountId: acct.sav.id, label: 'Monthly savings sweep', amount: 250, cadenceMonths: 1, startDate: addDays(TODAY, 10) },
       ],
-      streamOverrides: [{ accountId: acct.chk.id, merchantName: 'Acme Corp Payroll', excluded: false, personId: alex, endAge: age }],
-      excludedAccountIds: [], memberScenarioIds: [], accounts: [],
+      scenarioStreamOverrides: [{ accountId: acct.chk.id, merchantName: 'Acme Corp Payroll', excluded: false, personId: alex, endAge: age }],
+      excludedAccountIds: [], memberScenarioIds: [], scenarioAccounts: [],
     };
     return saveScenario(null, b);
   };
   retire('Retire at 62', 62);
   retire('Retire at 57', 57);
   saveScenario(null, {
-    name: 'Buy the lake house', horizonYears: 25, returnRate: 6.5, flows: [
-      { key: 'shock', flowType: 'SHOCK', accountId: acct.brk.id, label: 'Correction', rate: -18, startDate: addMonths(TODAY, 14) },
-      { key: 'extra', flowType: 'CONTRIBUTION', hypotheticalAccount: 'lm', targetAccountId: acct.chk.id, label: 'Extra principal', amount: 300, cadenceMonths: 1, startDate: addMonths(TODAY, 10) },
+    name: 'Buy the lake house', horizonYears: 25, returnRate: 6.5, scenarioFlows: [
+      { key: 'shock', scenarioFlowType: 'SHOCK', accountId: acct.brk.id, label: 'Correction', rate: -18, startDate: addMonths(TODAY, 14) },
+      { key: 'extra', scenarioFlowType: 'CONTRIBUTION', hypotheticalAccount: 'lm', targetAccountId: acct.chk.id, label: 'Extra principal', amount: 300, cadenceMonths: 1, startDate: addMonths(TODAY, 10) },
     ],
-    streamOverrides: [{ accountId: acct.card.id, merchantName: 'Netflix', excluded: true }],
+    scenarioStreamOverrides: [{ accountId: acct.card.id, merchantName: 'Netflix', excluded: true }],
     excludedAccountIds: [], memberScenarioIds: [],
-    accounts: [
+    scenarioAccounts: [
       { key: 'house', name: 'Lake house', accountType: 'ASSET', unitType: 'USD', openingBalance: 420000, openDate: addMonths(TODAY, 9), fundedFromAccountId: acct.brk.id, fundedAmount: 84000, appreciationRate: 2.5 },
       { key: 'lm', name: 'Lake house mortgage', accountType: 'LIABILITY', unitType: 'USD', openingBalance: 336000, openDate: addMonths(TODAY, 9), apr: 6.5, termMonths: 360, paymentFromAccountId: acct.chk.id, collateral: 'house', escrow: 390 },
     ],
@@ -126,22 +130,29 @@ function validate(b) {
   if (!b.name) errs.push('name: must not be blank');
   if (b.horizonYears != null && (b.horizonYears < 1 || b.horizonYears > 60)) errs.push('horizonYears: must be between 1 and 60');
   const known = new Set([...books.map((a) => a.id), ...Object.values(cats).map((c) => c.id)]);
-  const keys = new Set((b.accounts || []).map((a) => a.key));
-  (b.flows || []).forEach((f, i) => {
-    if (!f.flowType) errs.push(`flows[${i}].flowType: must not be null`);
-    if (!!f.accountId === !!f.hypotheticalAccount) errs.push(`flows[${i}]: give accountId or hypotheticalAccount, one of them`);
-    else if (f.accountId && !known.has(f.accountId)) errs.push(`flows[${i}].accountId: unknown account`);
-    else if (f.hypotheticalAccount && !keys.has(f.hypotheticalAccount)) errs.push(`flows[${i}].hypotheticalAccount: no account with key ${f.hypotheticalAccount} in this body`);
-    if (['SPENDING', 'DISPOSE'].includes(f.flowType) && (f.hypotheticalAccount || f.hypotheticalTargetAccount)) errs.push(`flows[${i}]: ${f.flowType} names book accounts only`);
-    if (f.flowType === 'TRANSFER' && !f.targetAccountId && !f.hypotheticalTargetAccount) errs.push(`flows[${i}].targetAccountId: required for TRANSFER`);
-    if (['SPENDING', 'DISPOSE'].includes(f.flowType) && !f.targetAccountId) errs.push(`flows[${i}].targetAccountId: required for ${f.flowType}`);
-    if ((f.startDate && f.startAge != null) || (f.endDate && f.endAge != null)) errs.push(`flows[${i}]: a date or an age, never both`);
-    if (f.flowType === 'RMD') {
-      if (!f.personId) errs.push(`flows[${i}].personId: required for an RMD`);
+  const keys = new Set((b.scenarioAccounts || []).map((a) => a.key));
+  (b.scenarioFlows || []).forEach((f, i) => {
+    if (!f.scenarioFlowType) errs.push(`scenarioFlows[${i}].scenarioFlowType: must not be null`);
+    if (!!f.accountId === !!f.hypotheticalAccount) errs.push(`scenarioFlows[${i}]: give accountId or hypotheticalAccount, one of them`);
+    else if (f.accountId && !known.has(f.accountId)) errs.push(`scenarioFlows[${i}].accountId: unknown account`);
+    else if (f.hypotheticalAccount && !keys.has(f.hypotheticalAccount)) errs.push(`scenarioFlows[${i}].hypotheticalAccount: no account with key ${f.hypotheticalAccount} in this body`);
+    if (['SPENDING', 'DISPOSE'].includes(f.scenarioFlowType) && (f.hypotheticalAccount || f.hypotheticalTargetAccount)) errs.push(`scenarioFlows[${i}]: ${f.scenarioFlowType} names book accounts only`);
+    if (f.scenarioFlowType === 'TRANSFER' && !f.targetAccountId && !f.hypotheticalTargetAccount) errs.push(`scenarioFlows[${i}].targetAccountId: required for TRANSFER`);
+    if (['SPENDING', 'DISPOSE'].includes(f.scenarioFlowType) && !f.targetAccountId) errs.push(`scenarioFlows[${i}].targetAccountId: required for ${f.scenarioFlowType}`);
+    if ((f.startDate && f.startAge != null) || (f.endDate && f.endAge != null)) errs.push(`scenarioFlows[${i}]: a date or an age, never both`);
+    if (f.scenarioFlowType === 'WITHDRAWAL') {
+      const types = [f.accountId, ...(f.fallbackAccountIds || [])].map((id) => bookById.get(id)?.assetType)
+        .concat(f.hypotheticalAccount ? [(b.scenarioAccounts || []).find((a) => a.key === f.hypotheticalAccount)?.assetType] : []);
+      if (!f.personId && types.some((t) => US_RETIREMENT.has(t))) errs.push(`scenarioFlows[${i}].personId: required for a WITHDRAWAL drawing on a US retirement account — its owner`);
+      if (f.withdrawalPurpose === 'RULE_OF_55' && !types.some((t) => ['_401K', '_401A', '_403B', 'PROFIT_SHARING_PLAN', 'ROTH_401K'].includes(t))) errs.push(`scenarioFlows[${i}].withdrawalPurpose: RULE_OF_55 needs a 401(k) or 403(b) to draw on`);
+      if (['NON_QUALIFIED', 'SCHOLARSHIP'].includes(f.withdrawalPurpose) && !types.some((t) => ['_529', 'EDUCATION_SAVINGS_ACCOUNT'].includes(t))) errs.push(`scenarioFlows[${i}].withdrawalPurpose: ${f.withdrawalPurpose} needs a 529 to draw on`);
+    }
+    if (f.scenarioFlowType === 'RMD') {
+      if (!f.personId) errs.push(`scenarioFlows[${i}].personId: required for an RMD`);
       const stated = ['amount', 'percent', 'rate', 'cadenceMonths', 'startDate', 'endDate', 'startAge', 'endAge'].filter((k) => f[k] != null);
-      if (stated.length) errs.push(`flows[${i}]: an RMD states no ${stated.join(', ')}`);
-      const td = f.accountId ? bookById.get(f.accountId)?.taxDeferred : TAX_DEFERRED.has((b.accounts || []).find((a) => a.key === f.hypotheticalAccount)?.assetType);
-      if (!td) errs.push(`flows[${i}].accountId: an RMD needs a tax-deferred account`);
+      if (stated.length) errs.push(`scenarioFlows[${i}]: an RMD states no ${stated.join(', ')}`);
+      const td = f.accountId ? bookById.get(f.accountId)?.taxDeferred : TAX_DEFERRED.has((b.scenarioAccounts || []).find((a) => a.key === f.hypotheticalAccount)?.assetType);
+      if (!td) errs.push(`scenarioFlows[${i}].accountId: an RMD needs a tax-deferred account`);
     }
   });
   if (errs.length) throw { status: 400, body: { code: 'validation_failed', errors: errs } };
@@ -152,9 +163,9 @@ function saveScenario(existing, b) {
   const now = new Date().toISOString();
   const name = (id) => bookById.get(id)?.name || Object.values(cats).find((c) => c.id === id)?.name || '?';
   const pname = (id) => persons.find((p) => p.id === id)?.name ?? null;
-  const flowIds = new Map((b.flows || []).map((f) => [f.key || uid(), uid()]));
-  const acctIds = new Map((b.accounts || []).map((a) => [a.key || uid(), uid()]));
-  const acctName = new Map((b.accounts || []).map((a) => [a.key, a.name]));
+  const flowIds = new Map((b.scenarioFlows || []).map((f) => [f.key || uid(), uid()]));
+  const acctIds = new Map((b.scenarioAccounts || []).map((a) => [a.key || uid(), uid()]));
+  const acctName = new Map((b.scenarioAccounts || []).map((a) => [a.key, a.name]));
   const resolve = (date, pid, age) => (pid && age != null ? dateAtAge(pid, age) : date ?? null);
   const s = {
     id: existing?.id || uid(), name: b.name, version: existing ? existing.version + 1 : 0, partyId: DEMO_PARTY,
@@ -162,8 +173,8 @@ function saveScenario(existing, b) {
     horizonAge: b.horizonPersonId ? b.horizonAge ?? 95 : null,
     inflationRate: b.inflationRate ?? null, returnRate: b.returnRate ?? null, incomeGrowthRate: b.incomeGrowthRate ?? null,
     taxRate: b.taxRate ?? null, volatility: b.volatility ?? null,
-    flows: (b.flows || []).map((f) => ({
-      id: flowIds.get(f.key) || uid(), flowType: f.flowType, complete: true,
+    scenarioFlows: (b.scenarioFlows || []).map((f) => ({
+      id: flowIds.get(f.key) || uid(), scenarioFlowType: f.scenarioFlowType, complete: true,
       accountId: f.accountId ?? null, hypotheticalAccountId: f.hypotheticalAccount ? acctIds.get(f.hypotheticalAccount) : null,
       accountName: f.accountId ? name(f.accountId) : acctName.get(f.hypotheticalAccount),
       targetAccountId: f.targetAccountId ?? null, hypotheticalTargetAccountId: f.hypotheticalTargetAccount ? acctIds.get(f.hypotheticalTargetAccount) : null,
@@ -173,18 +184,18 @@ function saveScenario(existing, b) {
       resolvedStartDate: resolve(f.startDate, f.personId, f.startAge), resolvedEndDate: resolve(f.endDate, f.personId, f.endAge),
       cadenceMonths: f.cadenceMonths ?? null, rate: f.rate ?? null, percent: f.percent ?? null,
       floorAmount: f.floorAmount ?? null, ceilingAmount: f.ceilingAmount ?? null,
-      fallbackAccounts: (f.fallbackAccountIds || []).map((id) => ({ id, name: name(id) })),
+      scenarioFallbackAccounts: (f.fallbackAccountIds || []).map((id) => ({ id, name: name(id) })),
       personId: f.personId ?? null, personName: pname(f.personId), startAge: f.startAge ?? null, endAge: f.endAge ?? null,
-      matchOfFlowId: f.matchOf ? flowIds.get(f.matchOf) ?? null : null,
+      matchOfFlowId: f.matchOf ? flowIds.get(f.matchOf) ?? null : null, withdrawalPurpose: f.withdrawalPurpose ?? null,
     })),
-    streamOverrides: (b.streamOverrides || []).map((o) => ({
+    scenarioStreamOverrides: (b.scenarioStreamOverrides || []).map((o) => ({
       id: uid(), accountId: o.accountId, accountName: name(o.accountId), merchantName: o.merchantName ?? null, excluded: !!o.excluded,
       startDate: o.startDate ?? null, startAge: o.startAge ?? null, resolvedStartDate: resolve(o.startDate, o.personId, o.startAge),
       endDate: o.endDate ?? null, resolvedEndDate: resolve(o.endDate, o.personId, o.endAge),
-      amount: o.amount ?? null, rate: o.rate ?? null, personId: o.personId ?? null, personName: pname(o.personId), endAge: o.endAge ?? null,
+      amount: o.amount ?? null, rate: o.rate ?? null, personId: o.personId ?? null, personName: pname(o.personId), endAge: o.endAge ?? null, streamAmount: o.merchantName ? o.streamAmount ?? null : null,
     })),
-    excludedAccounts: (b.excludedAccountIds || []).map((id) => ({ id, name: name(id) })),
-    accounts: (b.accounts || []).map((a) => ({
+    scenarioExcludedAccounts: (b.excludedAccountIds || []).map((id) => ({ id, name: name(id) })),
+    scenarioAccounts: (b.scenarioAccounts || []).map((a) => ({
       id: acctIds.get(a.key) || uid(), name: a.name, accountType: a.accountType, assetType: a.assetType ?? null, unitType: a.unitType || 'USD', openingBalance: a.openingBalance, openDate: a.openDate,
       fundedFromAccountId: a.fundedFromAccountId ?? null, fundedFromAccountName: a.fundedFromAccountId ? name(a.fundedFromAccountId) : null, fundedAmount: a.fundedAmount ?? null,
       appreciationRate: a.appreciationRate ?? null, apr: a.apr ?? null, termMonths: a.termMonths ?? null,
@@ -194,10 +205,10 @@ function saveScenario(existing, b) {
       collateralId: a.collateral ? acctIds.get(a.collateral) ?? null : null, collateralAccountId: a.collateralAccountId ?? null,
       collateralAccountName: a.collateralAccountId ? name(a.collateralAccountId) : null,
     })),
-    members: [], createdDate: existing?.createdDate || now, updatedDate: now,
+    scenarioMembers: [], createdDate: existing?.createdDate || now, updatedDate: now,
   };
-  for (const f of s.flows.filter((x) => x.flowType === 'RMD' && x.personId)) { const bd = persons.find((p) => p.id === f.personId)?.birthDate; f.resolvedStartDate = bd ? `${Number(bd.slice(0, 4)) + rmdStartAge(bd)}-01-01` : null; }
-  for (const f of s.flows.filter((x) => x.matchOfFlowId)) { const m = s.flows.find((x) => x.id === f.matchOfFlowId); f.resolvedStartDate = m?.resolvedStartDate ?? null; f.resolvedEndDate = m?.resolvedEndDate ?? null; }
+  for (const f of s.scenarioFlows.filter((x) => x.scenarioFlowType === 'RMD' && x.personId)) { const bd = persons.find((p) => p.id === f.personId)?.birthDate; f.resolvedStartDate = bd ? `${Number(bd.slice(0, 4)) + rmdStartAge(bd)}-01-01` : null; }
+  for (const f of s.scenarioFlows.filter((x) => x.matchOfFlowId)) { const m = s.scenarioFlows.find((x) => x.id === f.matchOfFlowId); f.resolvedStartDate = m?.resolvedStartDate ?? null; f.resolvedEndDate = m?.resolvedEndDate ?? null; }
   if (existing) scenarios[scenarios.indexOf(existing)] = s; else scenarios.push(s);
   return s;
 }
@@ -220,13 +231,13 @@ function rates(s, variant) {
 function simulate({ from = TODAY, days, step, scenarioList = [], extraFlows = [], calendar = true, baseline = true, variant, stressAt, stressPct, market, dailyBaseline = false }) {
   const s0 = scenarioList[0];
   const R = rates(s0, variant);
-  const flows = [...scenarioList.flatMap((s) => s.flows.filter((f) => f.complete).map((f) => ({
+  const flows = [...scenarioList.flatMap((s) => s.scenarioFlows.filter((f) => f.complete).map((f) => ({
     ...f, startDate: f.resolvedStartDate, endDate: f.resolvedEndDate,
     accountId: f.accountId ?? f.hypotheticalAccountId, targetAccountId: f.targetAccountId ?? f.hypotheticalTargetAccountId,
-  }))), ...extraFlows.map((f, i) => ({ id: uid(), accountName: bookById.get(f.accountId)?.name, fallbackAccounts: (f.fallbackAccountIds || []).map((id) => ({ id })), ...f, key: f.key || `x${i}` }))];
-  const overrides = scenarioList.flatMap((s) => s.streamOverrides);
-  const excluded = new Set(scenarioList.flatMap((s) => s.excludedAccounts.map((a) => a.id)));
-  const hypo = scenarioList.flatMap((s) => s.accounts);
+  }))), ...extraFlows.map((f, i) => ({ id: uid(), accountName: bookById.get(f.accountId)?.name, scenarioFallbackAccounts: (f.fallbackAccountIds || []).map((id) => ({ id })), ...f, key: f.key || `x${i}` }))];
+  const overrides = scenarioList.flatMap((s) => s.scenarioStreamOverrides);
+  const excluded = new Set(scenarioList.flatMap((s) => s.scenarioExcludedAccounts.map((a) => a.id)));
+  const hypo = scenarioList.flatMap((s) => s.scenarioAccounts);
   const accts = [...books.filter((a) => !excluded.has(a.id)).map((a) => ({ ...a })), ...hypo.map((h) => ({
     id: h.id, name: h.name, accountType: h.accountType, unitType: h.unitType, opening: 0, hypo: h,
     apr: h.apr, payment: h.payment, from: null, fromId: h.paymentFromAccountId, appreciation: h.appreciationRate, escrow: h.escrow,
@@ -252,10 +263,10 @@ function simulate({ from = TODAY, days, step, scenarioList = [], extraFlows = []
   // moving `amt` of cash into an account: an asset rises, a liability's owed amount falls.
   // A payment into a loan never takes it past zero owed.
   const cashIn = (id, amt, date, kind, label, src) => post(id, isLiab(id) ? -Math.min(amt, Math.max(0, bal.get(id) ?? 0)) : amt, date, kind, label, src);
-  const growthOverride = (id, date) => growthFlows.find((f) => f.flowType === 'GROWTH' && f.accountId === id && (!f.startDate || f.startDate <= date) && (!f.endDate || f.endDate >= date));
-  const withdrawals = flows.filter((f) => f.flowType === 'WITHDRAWAL');
+  const growthOverride = (id, date) => growthFlows.find((f) => f.scenarioFlowType === 'GROWTH' && f.accountId === id && (!f.startDate || f.startDate <= date) && (!f.endDate || f.endDate >= date));
+  const withdrawals = flows.filter((f) => f.scenarioFlowType === 'WITHDRAWAL');
   const fundingAccts = [...new Set(withdrawals.map((f) => f.accountId))];
-  const drawn = new Map(); const chainMin = new Map();
+  const drawn = new Map(); const chainMin = new Map(); const taxBy = new Map(); const penaltyBy = new Map();
   const targetsOut = [];
   const series = new Map(accts.map((a) => [a.id, []]));
   const low = new Map(accts.map((a) => [a.id, { date: from, balance: a.opening }]));
@@ -263,7 +274,7 @@ function simulate({ from = TODAY, days, step, scenarioList = [], extraFlows = []
   const cash = new Map();
   const to = addDays(from, days - 1);
   const occurs = (f, date) => {
-    if (!f.startDate && f.flowType !== 'WITHDRAWAL') return f.cadenceMonths ? dayOf(date) === 1 : false;
+    if (!f.startDate && f.scenarioFlowType !== 'WITHDRAWAL') return f.cadenceMonths ? dayOf(date) === 1 : false;
     const start = f.startDate || from;
     if (date < start || (f.endDate && date > f.endDate)) return false;
     if (dayOf(date) !== Math.min(dayOf(start), 28)) return false;
@@ -273,7 +284,7 @@ function simulate({ from = TODAY, days, step, scenarioList = [], extraFlows = []
   const cashTouch = (id, amt, date, label) => { if (!byId.get(id)?.cash || byId.get(id)?.accountType !== 'ASSET') return; const c = cf(date); if (amt >= 0) c.in += amt; else c.out -= amt; c.sources.set(label, (c.sources.get(label) || 0) + amt); };
 
   const cursor = new Date(from + 'T00:00:00Z');
-  const growthFlows = flows.filter((f) => f.flowType === 'GROWTH');
+  const growthFlows = flows.filter((f) => f.scenarioFlowType === 'GROWTH');
   for (let i = 0; i < days; i++, cursor.setUTCDate(cursor.getUTCDate() + 1)) {
     const date = cursor.toISOString().slice(0, 10);
     const nowMs = cursor.getTime();
@@ -332,15 +343,15 @@ function simulate({ from = TODAY, days, step, scenarioList = [], extraFlows = []
     // flows
     for (const f of flows) {
       if (f.matchOfFlowId || f.matchOf) continue;
-      if (f.flowType !== 'TARGET' && (!live(f.accountId, date) || (f.targetAccountId && !live(f.targetAccountId, date)))) continue;
-      const grow = (base) => base * (1 + (f.rate ?? (f.flowType === 'CONTRIBUTION' ? 0 : R.inflation.rate)) / 100) ** yr;
-      if (f.flowType === 'ONE_TIME' && f.startDate === date) { post(f.accountId, f.amount, date, 'FLOW', f.label || 'One-off'); cashTouch(f.accountId, f.amount, date, f.label || 'One-off'); if (f.targetAccountId) post(f.targetAccountId, -f.amount, date, 'FLOW', f.label); }
-      if (f.flowType === 'SHOCK' && (f.startDate === date || (f.startDate < from && date === from))) post(f.accountId, bal.get(f.accountId) * f.rate / 100, date, 'FLOW', f.label || 'Shock', f.id);
-      if (f.flowType === 'DISPOSE' && (f.startDate === date)) { const v = f.amount ?? bal.get(f.accountId); post(f.accountId, -bal.get(f.accountId), date, 'FLOW', f.label || 'Sold'); cashIn(f.targetAccountId, isLiab(f.accountId) ? -v : v, date, 'FLOW', f.label || 'Proceeds'); }
-      if (f.flowType === 'TARGET' && (f.startDate === date || (date === to && f.startDate > to))) targetsOut.push({ f, projected: bal.get(f.accountId) });
+      if (f.scenarioFlowType !== 'TARGET' && (!live(f.accountId, date) || (f.targetAccountId && !live(f.targetAccountId, date)))) continue;
+      const grow = (base) => base * (1 + (f.rate ?? (f.scenarioFlowType === 'CONTRIBUTION' ? 0 : R.inflation.rate)) / 100) ** yr;
+      if (f.scenarioFlowType === 'ONE_TIME' && f.startDate === date) { post(f.accountId, f.amount, date, 'FLOW', f.label || 'One-off'); cashTouch(f.accountId, f.amount, date, f.label || 'One-off'); if (f.targetAccountId) post(f.targetAccountId, -f.amount, date, 'FLOW', f.label); }
+      if (f.scenarioFlowType === 'SHOCK' && (f.startDate === date || (f.startDate < from && date === from))) post(f.accountId, bal.get(f.accountId) * f.rate / 100, date, 'FLOW', f.label || 'Shock', f.id);
+      if (f.scenarioFlowType === 'DISPOSE' && (f.startDate === date)) { const v = f.amount ?? bal.get(f.accountId); post(f.accountId, -bal.get(f.accountId), date, 'FLOW', f.label || 'Sold'); cashIn(f.targetAccountId, isLiab(f.accountId) ? -v : v, date, 'FLOW', f.label || 'Proceeds'); }
+      if (f.scenarioFlowType === 'TARGET' && (f.startDate === date || (date === to && f.startDate > to))) targetsOut.push({ f, projected: bal.get(f.accountId) });
       // RMD: each January 1 from the year the owner reaches the required age, the opening balance over the
       // uniform lifetime divisor at their age at the year's end, received less income tax.
-      const owner = f.flowType === 'RMD' ? persons.find((p) => p.id === f.personId) : null;
+      const owner = f.scenarioFlowType === 'RMD' ? persons.find((p) => p.id === f.personId) : null;
       const rmdAge = owner ? Number(date.slice(0, 4)) - Number(owner.birthDate.slice(0, 4)) : null;
       if (owner && rmdAge >= rmdStartAge(owner.birthDate) && date.slice(5) === '01-01' && bal.get(f.accountId) > 0) {
         const divisor = uniformDivisor(rmdAge);
@@ -351,8 +362,8 @@ function simulate({ from = TODAY, days, step, scenarioList = [], extraFlows = []
           if (tax) { post(f.targetAccountId, -amt * tax, date, 'TAX', `Income tax · ${f.label || 'RMD'}`, f.id); cashTouch(f.targetAccountId, -amt * tax, date, 'Income tax'); }
         }
       }
-      if (!['CONTRIBUTION', 'WITHDRAWAL', 'TRANSFER', 'SPENDING'].includes(f.flowType) || !occurs(f, date)) continue;
-      if (f.flowType === 'CONTRIBUTION') {
+      if (!['CONTRIBUTION', 'WITHDRAWAL', 'TRANSFER', 'SPENDING'].includes(f.scenarioFlowType) || !occurs(f, date)) continue;
+      if (f.scenarioFlowType === 'CONTRIBUTION') {
         const amt = isLiab(f.accountId) ? Math.min(grow(f.amount || 0), Math.max(0, bal.get(f.accountId))) : grow(f.amount || 0);
         if (!amt) continue;
         cashIn(f.accountId, amt, date, 'FLOW', f.label || 'Contribution', f.id);
@@ -360,23 +371,32 @@ function simulate({ from = TODAY, days, step, scenarioList = [], extraFlows = []
         for (const m of flows.filter((x) => (x.matchOfFlowId && x.matchOfFlowId === f.id) || (x.matchOf && x.matchOf === f.key))) {
           cashIn(m.accountId, Math.min(amt * (m.percent || 0) / 100, m.ceilingAmount ?? Infinity), date, 'FLOW', m.label || 'Match', m.id);
         }
-      } else if (f.flowType === 'TRANSFER') {
+      } else if (f.scenarioFlowType === 'TRANSFER') {
         const amt = grow(f.amount || 0);
         post(f.accountId, -amt, date, 'FLOW', f.label || 'Transfer', f.id); cashIn(f.targetAccountId, amt, date, 'FLOW', f.label || 'Transfer', f.id);
         // From a tax-deferred account the tax is drawn on top of the amount.
         if (tax && byId.get(f.accountId)?.taxDeferred) post(f.accountId, -amt * tax / (1 - tax), date, 'TAX', `Income tax · ${f.label || 'Transfer'}`, f.id);
-      } else if (f.flowType === 'SPENDING') {
+      } else if (f.scenarioFlowType === 'SPENDING') {
         const amt = grow(f.amount || 0);
         post(f.targetAccountId, -amt, date, 'SPENDING', f.label || 'Spending', f.id); cashTouch(f.targetAccountId, -amt, date, f.label || 'Spending');
-      } else if (f.flowType === 'WITHDRAWAL') {
+      } else if (f.scenarioFlowType === 'WITHDRAWAL') {
         let need = f.percent != null ? bal.get(f.accountId) * f.percent / 100 / (12 / (f.cadenceMonths || 1)) : grow(f.amount || 0);
-        const chain = [f.accountId, ...f.fallbackAccounts.map((a) => a.id)].filter((id) => byId.has(id));
+        const chain = [f.accountId, ...f.scenarioFallbackAccounts.map((a) => a.id)].filter((id) => byId.has(id));
         chain.forEach((id, k) => {
           if (need <= 0.005) return;
           const take = k === chain.length - 1 ? need : Math.max(0, Math.min(need, bal.get(id)));
           if (take > 0) {
             post(id, -take, date, 'FLOW', f.label || 'Withdrawal', f.id); need -= take; const key = `${f.accountId}|${id}`; drawn.set(key, (drawn.get(key) || 0) + take);
-            if (tax && byId.get(id)?.taxDeferred) post(id, -take * tax / (1 - tax), date, 'TAX', `Income tax · ${f.label || 'Withdrawal'}`, f.id);
+            const a = byId.get(id);
+            if (tax && a?.taxDeferred) { const t = take * tax / (1 - tax); post(id, -t, date, 'TAX', `Income tax · ${f.label || 'Withdrawal'}`, f.id); taxBy.set(f.accountId, (taxBy.get(f.accountId) || 0) + t); }
+            // Early-withdrawal penalty: 10% before the owner is 59½, waived under the Rule of 55 from a 401(k) after 55.
+            // (The demo penalizes tax-deferred draws only; a Roth's contributions come out first.)
+            const owner = persons.find((p) => p.id === f.personId);
+            const ageNow = owner ? (d2ms(date) - d2ms(owner.birthDate)) / (365.25 * 86400000) : null;
+            const ruleOf55 = f.withdrawalPurpose === 'RULE_OF_55' && ageNow >= 55 && ['_401K', '_401A', '_403B', 'PROFIT_SHARING_PLAN'].includes(a?.assetType);
+            if (a?.taxDeferred && US_RETIREMENT.has(a.assetType) && ageNow != null && ageNow < 59.5 && !ruleOf55) {
+              const pen = take / (1 - tax) * 0.1; post(id, -pen, date, 'PENALTY', `Early-withdrawal penalty · ${f.label || 'Withdrawal'}`, f.id); penaltyBy.set(f.accountId, (penaltyBy.get(f.accountId) || 0) + pen);
+            }
           }
         });
         const last = chain[chain.length - 1];
@@ -422,6 +442,7 @@ function simulate({ from = TODAY, days, step, scenarioList = [], extraFlows = []
     return {
       accountId: id, accountName: byId.get(id)?.name, unitType: 'USD', withdrawals: ws.map((f) => f.label || 'Withdrawal'),
       drawnFrom: [...drawn].filter(([k]) => k.startsWith(`${id}|`)).map(([k, v]) => ({ accountId: k.split('|')[1], accountName: byId.get(k.split('|')[1])?.name, amount: round2(v) })),
+      tax: round2(taxBy.get(id) || 0), penalty: round2(penaltyBy.get(id) || 0),
       funded: !m, shortDate: m?.date ?? null, shortfall: m ? round2(m.balance) : null,
       requiredMonthlyContribution: m && monthsToStart > 0 ? round2(-m.balance / monthsToStart / (1 + R.investmentReturn.rate / 100) ** (monthsToStart / 24)) : null,
       contributionAccountId: m && monthsToStart > 0 ? id : null,
@@ -442,7 +463,7 @@ function scenarioRun(list, { step = 30, stress = -30, calendar = true, baseline 
   // For short accounts: find the smallest delay (whole months) that funds them.
   for (const f of base.funding.filter((x) => !x.funded)) {
     for (let m = 12; m <= 144; m += 12) {
-      const shifted = list.map((s) => ({ ...s, flows: s.flows.map((fl) => (fl.flowType === 'WITHDRAWAL' && fl.accountId === f.accountId ? { ...fl, resolvedStartDate: addMonths(fl.resolvedStartDate || date, m), resolvedEndDate: fl.resolvedEndDate ? addMonths(fl.resolvedEndDate, m) : null } : fl)) }));
+      const shifted = list.map((s) => ({ ...s, scenarioFlows: s.scenarioFlows.map((fl) => (fl.scenarioFlowType === 'WITHDRAWAL' && fl.accountId === f.accountId ? { ...fl, resolvedStartDate: addMonths(fl.resolvedStartDate || date, m), resolvedEndDate: fl.resolvedEndDate ? addMonths(fl.resolvedEndDate, m) : null } : fl)) }));
       const r = simulate({ from: date, days, step: 3650, scenarioList: shifted, calendar, baseline, variant });
       if (r.funding.find((x) => x.accountId === f.accountId)?.funded) { f.delayMonths = m; f.earliestFundedStart = addMonths(f.firstStart, m); break; }
     }
@@ -461,9 +482,9 @@ function toForecastResponse(run, list) {
     scenarios: list,
     unreachableAccountIds: [],
     assumptions: [{ partyId: DEMO_PARTY, assumptions: R }],
-    assumedReturnAccountIds: books.filter((a) => a.invest && !base.flows.some((f) => f.flowType === 'GROWTH' && !f.startDate && f.accountId === a.id)).map((a) => a.id),
+    assumedReturnAccountIds: books.filter((a) => a.invest && !base.flows.some((f) => f.scenarioFlowType === 'GROWTH' && !f.startDate && f.accountId === a.id)).map((a) => a.id),
     baselines: BASELINE.map((b) => ({ accountId: acct[b.key].id, accountName: acct[b.key].name, unitType: 'USD', monthlyNet: b.monthlyNet, monthsOfHistory: 12, rate: R.inflation.rate })),
-    spending: base.flows.filter((f) => f.flowType === 'SPENDING').map((f) => ({ flowId: f.id, label: f.label, categoryId: f.accountId, categoryName: f.accountName, accountId: f.targetAccountId, accountName: f.targetAccountName, baselineMonthly: -420, monthly: f.amount, monthsOfHistory: 12 })),
+    spending: base.flows.filter((f) => f.scenarioFlowType === 'SPENDING').map((f) => ({ flowId: f.id, label: f.label, categoryId: f.accountId, categoryName: f.accountName, accountId: f.targetAccountId, accountName: f.targetAccountName, baselineMonthly: -420, monthly: f.amount, monthsOfHistory: 12 })),
     accounts: base.accounts,
     netPositions: [{ unitType: 'USD', points: base.netPoints }],
     convertedNetPosition: converted(base.netPoints, run.unitType),
@@ -472,7 +493,7 @@ function toForecastResponse(run, list) {
       const onTrack = projected >= f.amount; const months = Math.max(1, monthsBetween(base.from, f.startDate));
       return { flowId: f.id, label: f.label, accountId: f.accountId, accountName: f.accountName, unitType: 'USD', target: f.amount, date: f.startDate, projected: round2(projected), onTrack, gap: onTrack ? null : round2(f.amount - projected), requiredMonthlyContribution: onTrack ? null : round2((f.amount - projected) / months), contributionAccountId: onTrack ? null : f.accountId, plannedOpenDate: null };
     }),
-    stress: stressed ? { percent: run.stressPct, appliedOn: run.stressAt, funding: cleanF(stressed.funding) } : null,
+    stress: stressed ? { percent: run.stressPct, appliedOn: run.stressAt, funding: cleanF(stressed.funding).map(({ tax, penalty, ...rest }) => rest) } : null,
     drawdowns: [{ accountId: acct.brk.id, accountName: acct.brk.name, maxDrawdownPercent: -24.6 }, { accountId: acct.k401.id, accountName: acct.k401.name, maxDrawdownPercent: -19.8 }, { accountId: acct.roth.id, accountName: acct.roth.name, maxDrawdownPercent: -22.1 }],
     attribution: [],
     cashFlow: [...base.cash.values()].map((c) => ({ fromDate: c.fromDate, toDate: c.toDate, unitType: 'USD', moneyIn: round2(c.in), moneyOut: round2(c.out), net: round2(c.in - c.out), sources: [...c.sources].map(([label, amount]) => ({ kind: 'RECURRENCE', id: null, label, amount: round2(amount) })) })),
@@ -510,22 +531,22 @@ function route(method, path, { query = {}, body, ifMatch }) {
     const days = Number(q('days') || 30); const items = [];
     for (let i = 0; i < days; i++) {
       const date = addDays(TODAY, i);
-      for (const st of STREAMS) if (streamFires(st, date, d2ms(date))) items.push({ date, kind: 'RECURRENCE', accountId: acct[st.key].id, accountName: acct[st.key].name, unitType: 'USD', amount: st.key === 'card' ? st.amount : st.amount, merchantName: st.merchant, recurrence: st.recurrence, frequency: st.frequency, source: 'MODEL', confidence: 0.86 + (st.merchant.length % 10) / 100, windowDays: st.every ? 1 : 2.5, interest: null, escrow: null, paymentDue: null });
-      for (const a of books.filter((x) => x.payment) ) if (dayOf(date) === 1) { const interest = round2(a.opening * a.apr / 1200); items.push({ date, kind: 'LOAN_PAYMENT', accountId: a.id, accountName: a.name, unitType: 'USD', amount: -round2(a.payment - interest), merchantName: null, recurrence: null, frequency: 'MONTHLY', source: null, confidence: null, windowDays: null, interest, escrow: a.escrow ?? null, paymentDue: round2(a.payment + (a.escrow || 0)) }); }
+      for (const st of STREAMS) if (streamFires(st, date, d2ms(date))) items.push({ date, kind: 'RECURRENCE', accountId: acct[st.key].id, accountName: acct[st.key].name, unitType: 'USD', amount: st.key === 'card' ? st.amount : st.amount, merchantName: st.merchant, recurrence: st.recurrence, frequency: st.frequency, cadenceDays: GAP[st.frequency] ?? null, source: 'MODEL', confidence: 0.86 + (st.merchant.length % 10) / 100, windowDays: st.every ? 1 : 2.5, interest: null, escrow: null, paymentDue: null });
+      for (const a of books.filter((x) => x.payment) ) if (dayOf(date) === 1) { const interest = round2(a.opening * a.apr / 1200); items.push({ date, kind: 'LOAN_PAYMENT', accountId: a.id, accountName: a.name, unitType: 'USD', amount: -round2(a.payment - interest), merchantName: null, recurrence: null, frequency: 'MONTHLY', cadenceDays: null, source: null, confidence: null, windowDays: null, interest, escrow: a.escrow ?? null, paymentDue: round2(a.payment + (a.escrow || 0)) }); }
     }
     for (let i = 0; i < days; i++) {
       const date = addDays(TODAY, i);
       for (const p of planned.filter((x) => plannedFires(x, date))) {
-        const side = (accountId, amount) => ({ date, kind: 'PLANNED', accountId, accountName: bookById.get(accountId).name, unitType: 'USD', amount, label: p.label, plannedTransactionId: p.id, merchantName: null, recurrence: null, frequency: null, source: null, confidence: null, windowDays: null, interest: null, escrow: null, paymentDue: null });
+        const side = (accountId, amount) => ({ date, kind: 'PLANNED', accountId, accountName: bookById.get(accountId).name, unitType: 'USD', amount, label: p.label, plannedTransactionId: p.id, merchantName: null, recurrence: null, frequency: null, cadenceDays: null, source: null, confidence: null, windowDays: null, interest: null, escrow: null, paymentDue: null });
         if (p.fromAccountId) items.push(side(p.fromAccountId, bookById.get(p.fromAccountId).accountType === 'LIABILITY' ? p.amount : -p.amount));
         if (p.toAccountId) items.push(side(p.toAccountId, bookById.get(p.toAccountId).accountType === 'LIABILITY' ? -p.amount : p.amount));
       }
     }
     for (const d of declarations) {
       const next = addMonths(TODAY, 0).slice(0, 8) + '27';
-      if (next < addDays(TODAY, days)) items.push({ date: next, kind: 'RECURRENCE', accountId: d.accountId, accountName: d.accountName, unitType: 'USD', amount: -(d.amount ?? 50) * (bookById.get(d.accountId).accountType === 'LIABILITY' ? -1 : 1), merchantName: d.merchantName, recurrence: 'RECURRING', frequency: d.frequency, source: 'DECLARED', confidence: null, windowDays: null, interest: null, escrow: null, paymentDue: null });
+      if (next < addDays(TODAY, days)) items.push({ date: next, kind: 'RECURRENCE', accountId: d.accountId, accountName: d.accountName, unitType: 'USD', amount: -(d.amount ?? 50) * (bookById.get(d.accountId).accountType === 'LIABILITY' ? -1 : 1), merchantName: d.merchantName, recurrence: 'RECURRING', frequency: d.frequency, cadenceDays: GAP[d.frequency] ?? null, source: 'DECLARED', confidence: null, windowDays: null, interest: null, escrow: null, paymentDue: null });
     }
-    items.unshift({ date: addDays(TODAY, -2), kind: 'RECURRENCE', accountId: acct.card.id, accountName: acct.card.name, unitType: 'USD', amount: 14.99, merchantName: 'Cloud Storage+', recurrence: 'SUBSCRIPTION', frequency: 'MONTHLY', source: 'HEURISTIC', confidence: null, windowDays: 3, interest: null, escrow: null, paymentDue: null });
+    items.unshift({ date: addDays(TODAY, -2), kind: 'RECURRENCE', accountId: acct.card.id, accountName: acct.card.name, unitType: 'USD', amount: 14.99, merchantName: 'Cloud Storage+', recurrence: 'SUBSCRIPTION', frequency: 'MONTHLY', cadenceDays: 31, source: 'HEURISTIC', confidence: null, windowDays: 3, interest: null, escrow: null, paymentDue: null });
     return ok({ fromDate: TODAY, toDate: addDays(TODAY, days - 1), items });
   }
   if (method === 'GET' && path === '/v1/recurrences/audit') {
@@ -540,8 +561,8 @@ function route(method, path, { query = {}, body, ifMatch }) {
 
   // ---- recurrences: detected streams and declarations
   if (method === 'GET' && path === '/v1/recurrences') {
-    return ok({ paging: null, recurrences: STREAMS.filter((st) => !st.pays).map((st, i) => ({ accountId: acct[st.key].id, unitType: 'USD', merchantName: st.merchant, streamNo: i, recurrence: st.recurrence, frequency: st.frequency, source: 'MODEL', confidence: 0.9, declarationId: null, active: true, nextExpectedDate: null, transactionCount: 12, firstSeen: '2025-10-01', lastSeen: addDays(TODAY, -10), minAmount: Math.abs(st.amount), maxAmount: Math.abs(st.amount), meanAmount: Math.abs(st.amount), medianGapDays: 30, gapStddev: 1 }))
-      .concat(declarations.map((d) => ({ accountId: d.accountId, unitType: 'USD', merchantName: d.merchantName, recurrence: 'RECURRING', frequency: d.frequency, source: 'DECLARED', confidence: null, declarationId: d.id, active: true }))) });
+    return ok({ paging: null, recurrences: STREAMS.filter((st) => !st.pays).map((st, i) => ({ accountId: acct[st.key].id, unitType: 'USD', merchantName: st.merchant, streamNo: i, recurrence: st.recurrence, frequency: st.frequency, cadenceDays: GAP[st.frequency] ?? null, source: 'MODEL', confidence: 0.9, declarationId: null, active: true, nextExpectedDate: null, transactionCount: 12, firstSeen: '2025-10-01', lastSeen: addDays(TODAY, -10), minAmount: Math.abs(st.amount), maxAmount: Math.abs(st.amount), meanAmount: Math.abs(st.amount), medianGapDays: 30, gapStddev: 1 }))
+      .concat(declarations.map((d) => ({ accountId: d.accountId, unitType: 'USD', merchantName: d.merchantName, recurrence: 'RECURRING', frequency: d.frequency, cadenceDays: GAP[d.frequency] ?? null, source: 'DECLARED', confidence: null, declarationId: d.id, active: true }))) });
   }
   if (method === 'GET' && path === '/v1/recurrences/declarations') return ok({ declarations });
   if (method === 'POST' && path === '/v1/recurrences/declarations') {
@@ -597,7 +618,7 @@ function route(method, path, { query = {}, body, ifMatch }) {
     if (method === 'PUT') { checkVersion(p, ifMatch); Object.assign(p, { name: body.name, birthDate: body.birthDate, version: p.version + 1 }); }
     if (method === 'DELETE') {
       checkVersion(p, ifMatch);
-      if (scenarios.some((s) => s.horizonPersonId === p.id || s.flows.some((f) => f.personId === p.id) || s.streamOverrides.some((o) => o.personId === p.id))) throw { status: 409, body: { code: 'in_use', errors: [`${p.name} dates a scenario and cannot be removed`] } };
+      if (scenarios.some((s) => s.horizonPersonId === p.id || s.scenarioFlows.some((f) => f.personId === p.id) || s.scenarioStreamOverrides.some((o) => o.personId === p.id))) throw { status: 409, body: { code: 'in_use', errors: [`${p.name} dates a scenario and cannot be removed`] } };
       persons.splice(persons.indexOf(p), 1);
     }
     return ok(personOut(p), p.version);
@@ -640,7 +661,7 @@ function route(method, path, { query = {}, body, ifMatch }) {
   }
   if ((m = path.match(/^\/v1\/scenarios\/([^/]+)(\/copy|\/forecast|\/forecast\/ledger|\/forecast\/simulation)?$/))) {
     const s = scenarios.find((x) => x.id === m[1]) || notFound(path);
-    if (m[2] === '/copy') { const c = { ...structuredClone(s), id: uid(), name: q('name') || `${s.name} (copy)`, version: 0, createdDate: new Date().toISOString() }; c.flows = c.flows.filter((f) => f.complete); scenarios.push(c); return ok(c, 0); }
+    if (m[2] === '/copy') { const c = { ...structuredClone(s), id: uid(), name: q('name') || `${s.name} (copy)`, version: 0, createdDate: new Date().toISOString() }; c.scenarioFlows = c.scenarioFlows.filter((f) => f.complete); scenarios.push(c); return ok(c, 0); }
     if (m[2] === '/forecast/simulation') return ok(simulation([s], query));
     if (m[2] === '/forecast') return ok(toForecastResponse(scenarioRun([s], { step: Number(q('step') || 30), stress: Number(q('stress') || -30), baseline: q('baseline') !== 'false', unitType: q('unit_type') || 'USD' }), [s]));
     if (m[2] === '/forecast/ledger') {
