@@ -164,7 +164,7 @@ function addWhatIfRow() {
 async function runWhatIf() {
   const card = $('#wi-run').closest('.card'); clearErr(card);
   const flows = $$('.wi-row').map((r) => ({
-    flowType: 'ONE_TIME',
+    scenarioFlowType: 'ONE_TIME',
     accountId: $('[name=accountId]', r).value,
     label: $('[name=label]', r).value || null,
     amount: numOrNull($('[name=amount]', r).value),
@@ -220,7 +220,7 @@ function renderUpcoming(up) {
     const detail = i.kind === 'LOAN_PAYMENT'
       ? `payment due ${money(i.paymentDue, i.unitType)} · interest ${money(i.interest, i.unitType)}${i.escrow ? ` · escrow ${money(i.escrow, i.unitType)}` : ''}`
       : i.kind === 'PLANNED' ? '<span class="badge plain">planned</span>'
-      : [pretty(i.frequency), i.recurrence && pretty(i.recurrence), i.source === 'DECLARED' ? '<span class="badge plain">declared</span>' : null, i.windowDays != null && `±${Math.round(i.windowDays)}d`, i.confidence != null && `${Math.round(i.confidence * 100)}% confident`].filter(Boolean).join(' · ');
+      : [pretty(i.frequency), !i.frequency && i.cadenceDays != null && `every ${Math.round(i.cadenceDays)}d`, i.recurrence && pretty(i.recurrence), i.source === 'DECLARED' ? '<span class="badge plain">declared</span>' : null, i.windowDays != null && `±${Math.round(i.windowDays)}d`, i.confidence != null && `${Math.round(i.confidence * 100)}% confident`].filter(Boolean).join(' · ');
     return `${head}<tr><td>${esc(i.label || i.merchantName || (i.kind === 'LOAN_PAYMENT' ? 'Loan payment' : '—'))}</td><td>${esc(i.accountName)}</td><td class="num">${signed(cashDirection(i), i.unitType)}</td><td class="sub">${detail}</td></tr>`;
   }).join('') + '</tbody>' : '<tr><td class="muted">Nothing expected in this window.</td></tr>';
 }
@@ -384,7 +384,7 @@ async function loadScenarios() {
 
 function renderScenarioList() {
   $('#sc-list').innerHTML = state.scenarios.map((s) => `<li data-id="${s.id}" class="${s.id === state.selectedScenario ? 'is-selected' : ''}">${esc(s.name)}
-    <span class="sub">${horizonText(s)} · ${s.flows.length} flow${s.flows.length === 1 ? '' : 's'}${s.partyId !== state.party ? ' · member' : ''}</span></li>`).join('') ||
+    <span class="sub">${horizonText(s)} · ${s.scenarioFlows.length} flow${s.scenarioFlows.length === 1 ? '' : 's'}${s.partyId !== state.party ? ' · member' : ''}</span></li>`).join('') ||
     '<li class="muted">No scenarios yet.</li>';
   $$('#sc-list li[data-id]').forEach((li) => li.addEventListener('click', () => selectScenario(li.dataset.id)));
 }
@@ -394,7 +394,7 @@ const nm = (n) => (n ? esc(n) : '<i>removed account</i>');
 const FLOW_TEXT = {
   GROWTH: (f) => `${nm(f.accountName)} grows ${pct(f.rate)} / yr`,
   CONTRIBUTION: (f) => (f.matchOfFlowId ? `Match ${pct(f.percent)} into ${nm(f.accountName)}${f.ceilingAmount ? `, up to ${money(f.ceilingAmount)}` : ''}` : `${money(f.amount)} into ${nm(f.accountName)}${f.targetAccountName ? ` from ${nm(f.targetAccountName)}` : ''}`),
-  WITHDRAWAL: (f) => `${f.percent != null ? `${pct(f.percent)} / yr` : money(f.amount)} from ${nm(f.accountName)}${f.targetAccountName ? ` to ${nm(f.targetAccountName)}` : ''}${f.fallbackAccounts.length ? `, then ${f.fallbackAccounts.map((a) => esc(a.name)).join(' → ')}` : ''}`,
+  WITHDRAWAL: (f) => `${f.percent != null ? `${pct(f.percent)} / yr` : money(f.amount)} from ${nm(f.accountName)}${f.targetAccountName ? ` to ${nm(f.targetAccountName)}` : ''}${f.scenarioFallbackAccounts.length ? `, then ${f.scenarioFallbackAccounts.map((a) => esc(a.name)).join(' → ')}` : ''}${f.withdrawalPurpose ? ` · ${esc(PURPOSES.find(([v]) => v === f.withdrawalPurpose)?.[1] || pretty(f.withdrawalPurpose))}` : ''}${f.personName && f.startAge == null && f.endAge == null ? ` · owner ${esc(f.personName)}` : ''}`,
   TRANSFER: (f) => `${money(f.amount)} ${nm(f.accountName)} → ${nm(f.targetAccountName)}`,
   ONE_TIME: (f) => `${money(f.amount)} ${f.amount >= 0 ? 'into' : 'out of'} ${nm(f.accountName)}`,
   SPENDING: (f) => `${nm(f.accountName)} at ${money(f.amount)} / mo from ${nm(f.targetAccountName)}`,
@@ -406,7 +406,7 @@ const FLOW_TEXT = {
 const cadence = (m) => (m == null ? '' : m === 1 ? 'monthly' : m === 12 ? 'yearly' : m === 3 ? 'quarterly' : `every ${m} mo`);
 function flowWhen(f) {
   if (f.matchOfFlowId) return 'with the contribution it matches';
-  if (f.flowType === 'RMD') {
+  if (f.scenarioFlowType === 'RMD') {
     const p = state.persons.find((x) => x.id === f.personId);
     return `each January 1${f.resolvedStartDate ? ` from ${fmtDate(f.resolvedStartDate, { year: 'numeric' })}` : p ? ` from ${Number(p.birthDate.slice(0, 4)) + rmdAge(p.birthDate)}` : ''}${p ? ` (${esc(p.name)} at ${rmdAge(p.birthDate)})` : ''}`;
   }
@@ -415,9 +415,9 @@ function flowWhen(f) {
   const age = (a, resolved) => (a != null ? `${esc(f.personName || 'person')} ${a}${resolved ? ` (${my(resolved)})` : ''}` : null);
   const start = age(f.startAge, f.resolvedStartDate) || my(f.startDate || f.resolvedStartDate);
   const end = age(f.endAge, f.resolvedEndDate) || (f.endDate ? my(f.endDate) : null);
-  if (['ONE_TIME', 'SHOCK', 'DISPOSE', 'TARGET'].includes(f.flowType)) return f.flowType === 'TARGET' ? `by ${start}` : `on ${start}`;
-  if (!f.startDate && f.startAge == null && !f.endDate && f.endAge == null) return f.flowType === 'GROWTH' ? 'whole run' : cadence(f.cadenceMonths);
-  return [cadence(f.cadenceMonths), `${start}${end ? ` – ${end}` : ' onward'}`, f.rate != null && f.flowType !== 'GROWTH' && f.flowType !== 'SHOCK' ? `grows ${pct(f.rate)}` : null].filter(Boolean).join(' · ');
+  if (['ONE_TIME', 'SHOCK', 'DISPOSE', 'TARGET'].includes(f.scenarioFlowType)) return f.scenarioFlowType === 'TARGET' ? `by ${start}` : `on ${start}`;
+  if (!f.startDate && f.startAge == null && !f.endDate && f.endAge == null) return f.scenarioFlowType === 'GROWTH' ? 'whole run' : cadence(f.cadenceMonths);
+  return [cadence(f.cadenceMonths), `${start}${end ? ` – ${end}` : ' onward'}`, f.rate != null && f.scenarioFlowType !== 'GROWTH' && f.scenarioFlowType !== 'SHOCK' ? `grows ${pct(f.rate)}` : null].filter(Boolean).join(' · ');
 }
 
 async function selectScenario(id) {
@@ -432,11 +432,11 @@ async function selectScenario(id) {
     <div class="card-head"><h2>${esc(s.name)}</h2><div class="row-actions" style="margin:0">
       <button class="ghost-btn sm" data-act="edit">Edit</button><button class="ghost-btn sm" data-act="copy">Copy</button><button class="ghost-btn sm danger" data-act="archive">Archive</button></div></div>
     <div class="muted">Horizon ${horizonText(s)} · inflation ${rate(s.inflationRate)} · return ${rate(s.returnRate)} · income growth ${rate(s.incomeGrowthRate)} · income tax ${rate(s.taxRate)} · volatility ${rate(s.volatility)} · v${s.version}</div>
-    ${s.flows.length ? `<h3>Flows</h3><table class="data"><tbody>${s.flows.map((f) => `<tr><td><span class="badge plain">${flowLabel(f.flowType)}</span>${f.complete ? '' : '<div><span class="badge warn" title="It lost an account it needs; runs leave it out and a save drops it">incomplete</span></div>'}</td><td>${f.label ? `<b>${esc(f.label)}</b><div class="sub">` : '<div>'}${(FLOW_TEXT[f.flowType] || (() => ''))(f)}</div></td><td class="sub">${flowWhen(f)}</td></tr>`).join('')}</tbody></table>` : '<p class="note">No flows yet — the run projects the calendar and baseline as they are. Edit to add contributions, withdrawals, targets…</p>'}
-    ${s.streamOverrides.length ? `<h3>Calendar overrides</h3><ul class="sub">${s.streamOverrides.map((o) => `<li>${esc(o.merchantName || 'Loan schedule')} on ${esc(o.accountName)}${o.resolvedStartDate ? ` from ${o.startAge != null ? `${esc(o.personName)} ${o.startAge} (${fmtDate(o.resolvedStartDate)})` : fmtDate(o.startDate)}` : ''}: ${o.excluded ? 'dropped' : [(o.endDate || o.resolvedEndDate) && `ends ${o.endAge != null ? `at ${esc(o.personName)} ${o.endAge} (${fmtDate(o.resolvedEndDate)})` : fmtDate(o.endDate)}`, o.amount != null && `re-priced to ${money(o.amount)}`, o.rate != null && `grows ${pct(o.rate)}`].filter(Boolean).join(', ')}</li>`).join('')}</ul>` : ''}
-    ${s.accounts.length ? `<h3>Hypothetical accounts</h3><ul class="sub">${s.accounts.map((a) => `<li>${esc(a.name)} (${pretty(a.assetType || a.accountType)}) ${money(a.openingBalance, a.unitType)} from ${fmtDate(a.openDate)}${a.payment ? ` · ${money(a.payment, a.unitType)}/mo` : ''}${a.disposedOn ? ` · until ${fmtDate(a.disposedOn)}` : ''}</li>`).join('')}</ul>` : ''}
-    ${s.excludedAccounts.length ? `<p class="sub">Left out: ${s.excludedAccounts.map((a) => esc(a.name)).join(', ')}</p>` : ''}
-    ${s.members.length ? `<p class="sub">Runs with: ${s.members.map((m) => esc(m.name)).join(', ')}</p>` : ''}
+    ${s.scenarioFlows.length ? `<h3>Flows</h3><table class="data"><tbody>${s.scenarioFlows.map((f) => `<tr><td><span class="badge plain">${flowLabel(f.scenarioFlowType)}</span>${f.complete ? '' : '<div><span class="badge warn" title="It lost an account it needs; runs leave it out and a save drops it">incomplete</span></div>'}</td><td>${f.label ? `<b>${esc(f.label)}</b><div class="sub">` : '<div>'}${(FLOW_TEXT[f.scenarioFlowType] || (() => ''))(f)}</div></td><td class="sub">${flowWhen(f)}</td></tr>`).join('')}</tbody></table>` : '<p class="note">No flows yet — the run projects the calendar and baseline as they are. Edit to add contributions, withdrawals, targets…</p>'}
+    ${s.scenarioStreamOverrides.length ? `<h3>Calendar overrides</h3><ul class="sub">${s.scenarioStreamOverrides.map((o) => `<li>${esc(o.merchantName || 'Loan schedule')}${o.streamAmount != null ? ` (the ${money(o.streamAmount)} stream)` : ''} on ${esc(o.accountName)}${o.resolvedStartDate ? ` from ${o.startAge != null ? `${esc(o.personName)} ${o.startAge} (${fmtDate(o.resolvedStartDate)})` : fmtDate(o.startDate)}` : ''}: ${o.excluded ? 'dropped' : [(o.endDate || o.resolvedEndDate) && `ends ${o.endAge != null ? `at ${esc(o.personName)} ${o.endAge} (${fmtDate(o.resolvedEndDate)})` : fmtDate(o.endDate)}`, o.amount != null && `re-priced to ${money(o.amount)}`, o.rate != null && `grows ${pct(o.rate)}`].filter(Boolean).join(', ')}</li>`).join('')}</ul>` : ''}
+    ${s.scenarioAccounts.length ? `<h3>Hypothetical accounts</h3><ul class="sub">${s.scenarioAccounts.map((a) => `<li>${esc(a.name)} (${pretty(a.assetType || a.accountType)}) ${money(a.openingBalance, a.unitType)} from ${fmtDate(a.openDate)}${a.payment ? ` · ${money(a.payment, a.unitType)}/mo` : ''}${a.disposedOn ? ` · until ${fmtDate(a.disposedOn)}` : ''}</li>`).join('')}</ul>` : ''}
+    ${s.scenarioExcludedAccounts.length ? `<p class="sub">Left out: ${s.scenarioExcludedAccounts.map((a) => esc(a.name)).join(', ')}</p>` : ''}
+    ${s.scenarioMembers.length ? `<p class="sub">Runs with: ${s.scenarioMembers.map((m) => esc(m.name)).join(', ')}</p>` : ''}
     <div class="toolbar" style="margin:14px 0 0">
       <label>Market shock <select id="run-stress">${[-10, -20, -30, -40, -50].map((v) => `<option${v === -30 ? ' selected' : ''}>${v}</option>`).join('')}</select>%</label>
       <label>Cash flow by <select id="run-period"><option value="YEAR">year</option><option value="MONTH">month</option></select></label>
@@ -538,6 +538,8 @@ function fundingCard(f, stressed, names = new Map()) {
     ${f.funded ? '' : `<dt>Shortfall</dt><dd class="neg">${money(f.shortfall, f.unitType)}</dd>`}
     ${f.requiredMonthlyContribution != null ? `<dt>…or save extra</dt><dd>${money(f.requiredMonthlyContribution, f.unitType)}/mo${into(f)}</dd>` : ''}
     ${f.delayMonths != null ? `<dt>…or start later</dt><dd>${f.delayMonths} mo · ${fmtDate(f.earliestFundedStart, { month: 'short', year: 'numeric' })}</dd>` : ''}
+    ${f.tax ? `<dt>Income tax on the draws</dt><dd class="neg">${money(f.tax, f.unitType)}</dd>` : ''}
+    ${f.penalty ? `<dt>Early-withdrawal penalty</dt><dd class="neg">${money(f.penalty, f.unitType)}</dd>` : ''}
     ${f.drawnFrom.map((d) => `<dt>drawn from ${esc(d.accountName)}</dt><dd>${money(d.amount, f.unitType)}</dd>`).join('')}
     ${stressed ? `<dt>After the shock</dt><dd>${stressed.funded ? '<span class="pos">still funded</span>' : `<span class="neg">short ${fmtDate(stressed.shortDate, { month: 'short', year: 'numeric' })}</span>`}</dd>` : ''}
     ${stressed && !stressed.funded && stressed.requiredMonthlyContribution != null ? `<dt>…to survive it</dt><dd>${money(stressed.requiredMonthlyContribution, f.unitType)}/mo${into(stressed)}</dd>` : ''}
@@ -591,7 +593,7 @@ async function archiveScenario(s) {
 const FLOW_FIELDS = {
   GROWTH: ['accountId', 'rate', 'startDate', 'endDate'],
   CONTRIBUTION: ['accountId', 'targetAccountId', 'amount', 'cadenceMonths', 'startDate', 'endDate', 'rate', 'person'],
-  WITHDRAWAL: ['accountId', 'targetAccountId', 'amount', 'percent', 'cadenceMonths', 'startDate', 'endDate', 'rate', 'person', 'fallbackAccountIds'],
+  WITHDRAWAL: ['accountId', 'targetAccountId', 'amount', 'percent', 'cadenceMonths', 'startDate', 'endDate', 'rate', 'owner', 'purpose', 'fallbackAccountIds'],
   TRANSFER: ['accountId', 'targetAccountId', 'amount', 'cadenceMonths', 'startDate', 'endDate', 'rate', 'person'],
   ONE_TIME: ['accountId', 'targetAccountId', 'amount', 'startDate', 'person'],
   SPENDING: ['accountId', 'targetAccountId', 'amount', 'startDate', 'endDate', 'rate'],
@@ -602,6 +604,8 @@ const FLOW_FIELDS = {
   // sets the rest. It states no amount, percent, rate, cadence, dates or ages — any of them is a 400.
   RMD: ['accountId', 'targetAccountId', 'rmdPerson'],
 };
+// ScenarioFlowBody.withdrawalPurpose: blank is the plain rule (qualified education on a 529; taxed, and penalized before 59½, on a retirement account).
+const PURPOSES = [['', 'Plain rule'], ['NON_QUALIFIED', '529: not qualified education'], ['SCHOLARSHIP', '529: up to a scholarship'], ['RULE_OF_55', '401(k)/403(b): Rule of 55']];
 const FLOW_LABELS = {
   GROWTH: { accountId: 'Account that grows', rate: 'Return % / yr', startDate: 'From (blank = whole run)', endDate: 'Until' },
   CONTRIBUTION: { accountId: 'Into', targetAccountId: 'From (optional)', amount: 'Amount each time', rate: 'Grows % / yr' },
@@ -630,27 +634,27 @@ function scenarioToBody(s) {
     incomeGrowthRate: s.incomeGrowthRate ?? null,
     taxRate: s.taxRate ?? null,
     volatility: s.volatility ?? null,
-    flows: s.flows.filter((f) => f.complete).map((f) => ({
-      key: f.id, flowType: f.flowType,
+    scenarioFlows: s.scenarioFlows.filter((f) => f.complete).map((f) => ({
+      key: f.id, scenarioFlowType: f.scenarioFlowType,
       accountId: f.accountId ?? null, hypotheticalAccount: f.hypotheticalAccountId ?? null,
       targetAccountId: f.targetAccountId ?? null, hypotheticalTargetAccount: f.hypotheticalTargetAccountId ?? null,
       label: f.label ?? null, amount: f.amount ?? null,
       startDate: f.startDate ?? null, endDate: f.endDate ?? null,
       cadenceMonths: f.cadenceMonths ?? null, rate: f.rate ?? null, percent: f.percent ?? null,
       floorAmount: f.floorAmount ?? null, ceilingAmount: f.ceilingAmount ?? null,
-      fallbackAccountIds: f.fallbackAccounts.map((a) => a.id),
+      fallbackAccountIds: f.scenarioFallbackAccounts.map((a) => a.id),
       personId: f.personId ?? null, startAge: f.startAge ?? null, endAge: f.endAge ?? null,
-      matchOf: f.matchOfFlowId ?? null,
+      matchOf: f.matchOfFlowId ?? null, withdrawalPurpose: f.withdrawalPurpose ?? null,
     })),
-    streamOverrides: s.streamOverrides.map((o) => ({
+    scenarioStreamOverrides: s.scenarioStreamOverrides.map((o) => ({
       accountId: o.accountId, merchantName: o.merchantName ?? null, excluded: o.excluded,
       startDate: o.startDate ?? null, startAge: o.startAge ?? null,
       endDate: o.endDate ?? null, amount: o.amount ?? null, rate: o.rate ?? null,
-      personId: o.personId ?? null, endAge: o.endAge ?? null,
+      personId: o.personId ?? null, endAge: o.endAge ?? null, streamAmount: o.streamAmount ?? null,
     })),
-    excludedAccountIds: s.excludedAccounts.map((a) => a.id),
-    memberScenarioIds: s.members.map((m) => m.id),
-    accounts: s.accounts.map((a) => ({
+    excludedAccountIds: s.scenarioExcludedAccounts.map((a) => a.id),
+    memberScenarioIds: s.scenarioMembers.map((m) => m.id),
+    scenarioAccounts: s.scenarioAccounts.map((a) => ({
       key: a.id, name: a.name, accountType: a.accountType, assetType: a.assetType ?? null, unitType: a.unitType,
       openingBalance: a.openingBalance, openDate: a.openDate,
       fundedFromAccountId: a.fundedFromAccountId ?? null, fundedAmount: a.fundedAmount ?? null, appreciationRate: a.appreciationRate ?? null,
@@ -665,7 +669,7 @@ const accountRef = (val, bookField, hypoField) => (val.startsWith('hypo:')
   ? { [bookField]: null, [hypoField]: val.slice(5) }
   : { [bookField]: val || null, [hypoField]: null });
 
-const EMPTY_BODY = { name: '', horizonYears: 30, horizonPersonId: null, horizonAge: null, inflationRate: null, returnRate: null, incomeGrowthRate: null, taxRate: null, volatility: null, flows: [], streamOverrides: [], excludedAccountIds: [], memberScenarioIds: [], accounts: [] };
+const EMPTY_BODY = { name: '', horizonYears: 30, horizonPersonId: null, horizonAge: null, inflationRate: null, returnRate: null, incomeGrowthRate: null, taxRate: null, volatility: null, scenarioFlows: [], scenarioStreamOverrides: [], excludedAccountIds: [], memberScenarioIds: [], scenarioAccounts: [] };
 
 function personOptions(sel) {
   return `<option value="">—</option>` + state.persons.map((p) => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${esc(p.name)} (${p.age})</option>`).join('');
@@ -693,7 +697,7 @@ function openEditor(existing) {
         <label title="Effective rate on money leaving an IRA or 401(k); 0 taxes nothing">Income tax % <input name="taxRate" type="number" step="0.1" min="0" max="99" value="${body.taxRate ?? ''}" /></label>
         <label title="Only used by simulations: how widely the market's yearly return swings">Volatility % <input name="volatility" type="number" step="0.1" min="0" max="100" value="${body.volatility ?? ''}" /></label>
       </div>
-      <h3>Flows</h3>${existing && existing.flows.some((f) => !f.complete) ? `<p class="note">${existing.flows.filter((f) => !f.complete).length} incomplete flow(s) lost an account they need and will be dropped on save.</p>` : ''}<div id="ed-flows" class="stack"></div>
+      <h3>Flows</h3>${existing && existing.scenarioFlows.some((f) => !f.complete) ? `<p class="note">${existing.scenarioFlows.filter((f) => !f.complete).length} incomplete flow(s) lost an account they need and will be dropped on save.</p>` : ''}<div id="ed-flows" class="stack"></div>
       <div class="row-actions"><select id="ed-flow-type">${Object.keys(FLOW_FIELDS).map((t) => `<option value="${t}">${flowLabel(t)}</option>`).join('')}</select><button type="button" class="ghost-btn sm" id="ed-add-flow">+ Add flow</button></div>
       <h3>Calendar overrides <span class="src">(end a paycheck at retirement, drop or re-price a subscription)</span></h3><div id="ed-overrides" class="stack"></div>
       <div class="row-actions"><button type="button" class="ghost-btn sm" id="ed-add-ov">+ Add override</button></div>
@@ -713,37 +717,40 @@ function openEditor(existing) {
   form.horizonMode.addEventListener('change', syncHorizon); syncHorizon();
   $$('#ed-excluded .chip', dlg).forEach((c) => $('input', c).addEventListener('change', (e) => c.classList.toggle('is-on', e.target.checked)));
 
-  body.accounts.forEach((a) => addAccountEditor(a));
-  body.flows.forEach((f) => addFlowEditor(f));
-  body.streamOverrides.forEach((o) => addOverrideEditor(o));
-  $('#ed-add-flow', dlg).addEventListener('click', () => addFlowEditor({ key: `new-${crypto.randomUUID()}`, flowType: $('#ed-flow-type').value, fallbackAccountIds: [], cadenceMonths: 1 }));
+  body.scenarioAccounts.forEach((a) => addAccountEditor(a));
+  body.scenarioFlows.forEach((f) => addFlowEditor(f));
+  body.scenarioStreamOverrides.forEach((o) => addOverrideEditor(o));
+  $('#ed-add-flow', dlg).addEventListener('click', () => addFlowEditor({ key: `new-${crypto.randomUUID()}`, scenarioFlowType: $('#ed-flow-type').value, fallbackAccountIds: [], cadenceMonths: 1 }));
   $('#ed-add-ov', dlg).addEventListener('click', () => addOverrideEditor({ excluded: false }));
   $('#ed-add-acct', dlg).addEventListener('click', () => addAccountEditor({ key: `new-${crypto.randomUUID()}`, accountType: 'ASSET', openDate: addDays(today(), 180), unitType: state.unit }));
 
   function addFlowEditor(f) {
-    const fields = FLOW_FIELDS[f.flowType] || [];
-    const L = { amount: 'Amount', rate: 'Rate %', startDate: 'Start', endDate: 'End (blank = horizon)', cadenceMonths: 'Every (months)', percent: 'Percent', ...(FLOW_LABELS[f.flowType] || {}) };
-    const spendingCats = f.flowType === 'SPENDING';
+    const fields = FLOW_FIELDS[f.scenarioFlowType] || [];
+    const L = { amount: 'Amount', rate: 'Rate %', startDate: 'Start', endDate: 'End (blank = horizon)', cadenceMonths: 'Every (months)', percent: 'Percent', ...(FLOW_LABELS[f.scenarioFlowType] || {}) };
+    const spendingCats = f.scenarioFlowType === 'SPENDING';
     // SPENDING and DISPOSE name book accounts only; every other flow may act on a hypothetical account.
-    const bookOnly = spendingCats || f.flowType === 'DISPOSE';
-    const isRmd = f.flowType === 'RMD';
+    const bookOnly = spendingCats || f.scenarioFlowType === 'DISPOSE';
+    const isRmd = f.scenarioFlowType === 'RMD';
     const el = document.createElement('div');
     el.className = 'flow-row'; el._flow = f;
     const input = (name, type = 'number', extra = '') => fields.includes(name) ? `<label>${L[name]} <input name="${name}" type="${type}" step="any" value="${f[name] ?? ''}" ${extra}/></label>` : '';
-    el.innerHTML = `<div class="head"><span><span class="badge plain">${flowLabel(f.flowType)}</span>${f.matchOf ? ' <span class="sub">employer match</span>' : ''}</span><button type="button" class="link-btn sm">Remove</button></div>
+    el.innerHTML = `<div class="head"><span><span class="badge plain">${flowLabel(f.scenarioFlowType)}</span>${f.matchOf ? ' <span class="sub">employer match</span>' : ''}</span><button type="button" class="link-btn sm">Remove</button></div>
       <div class="form-grid">
         <label>Label <input name="label" value="${esc(f.label ?? '')}" placeholder="What is it?" /></label>
         <label>${L.accountId || 'Account'} <select name="accountId" required data-hypo="${bookOnly ? '' : 'yes'}"${isRmd ? ' data-taxdeferred' : ''}>${accountOptions(f.accountId, { types: spendingCats ? ['EXPENSE', 'REVENUE'] : isRmd ? ['ASSET'] : ['ASSET', 'LIABILITY'], blank: 'Choose…', filter: isRmd ? (a) => TAX_DEFERRED.has(a.assetType) : undefined })}${bookOnly ? '' : hypoOptions(f.hypotheticalAccount, isRmd)}</select></label>
-        ${fields.includes('targetAccountId') ? `<label>${L.targetAccountId} <select name="targetAccountId"${['TRANSFER', 'SPENDING', 'DISPOSE'].includes(f.flowType) ? ' required' : ''} data-hypo="${bookOnly ? '' : 'yes'}">${accountOptions(f.targetAccountId, { blank: '—' })}${bookOnly ? '' : hypoOptions(f.hypotheticalTargetAccount)}</select></label>` : ''}
+        ${fields.includes('targetAccountId') ? `<label>${L.targetAccountId} <select name="targetAccountId"${['TRANSFER', 'SPENDING', 'DISPOSE'].includes(f.scenarioFlowType) ? ' required' : ''} data-hypo="${bookOnly ? '' : 'yes'}">${accountOptions(f.targetAccountId, { blank: '—' })}${bookOnly ? '' : hypoOptions(f.hypotheticalTargetAccount)}</select></label>` : ''}
         ${f.matchOf ? `<label>Match % of their contribution <input name="percent" type="number" step="any" value="${f.percent ?? ''}"/></label><label>Cap per occurrence <input name="ceilingAmount" type="number" step="any" value="${f.ceilingAmount ?? ''}"/></label>` : `${input('amount')}${input('percent')}`}
         ${!f.matchOf && fields.includes('cadenceMonths') ? `<label>${L.cadenceMonths} <select name="cadenceMonths">${[[1, 'Monthly'], [3, 'Quarterly'], [6, 'Twice a year'], [12, 'Yearly']].map(([v, t]) => `<option value="${v}"${Number(f.cadenceMonths ?? 1) === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>` : ''}
         ${f.matchOf ? '' : input('startDate', 'date') + input('endDate', 'date')}
         ${input('rate')}
         ${fields.includes('rmdPerson') ? `<label>Account owner <select name="personId" required>${personOptions(f.personId)}</select></label><p class="sub" style="grid-column: span 2; margin:0">Each January 1 from the year the owner turns 72, 73 or 75 (by birth year), the IRS minimum leaves the account, received less the income tax rate.</p>` : ''}
-        ${!f.matchOf && fields.includes('person') && state.persons.length ? `<label>…or by age of <select name="personId">${personOptions(f.personId)}</select></label>${fields.includes('endDate') || f.flowType === 'ONE_TIME' || f.flowType === 'TARGET' ? `<label>From age <input name="startAge" type="number" value="${f.startAge ?? ''}"/></label>` : ''}${fields.includes('endDate') ? `<label>Until age <input name="endAge" type="number" value="${f.endAge ?? ''}"/></label>` : ''}` : ''}
+        ${!f.matchOf && fields.includes('person') && state.persons.length ? `<label>…or by age of <select name="personId">${personOptions(f.personId)}</select></label>${fields.includes('endDate') || f.scenarioFlowType === 'ONE_TIME' || f.scenarioFlowType === 'TARGET' ? `<label>From age <input name="startAge" type="number" value="${f.startAge ?? ''}"/></label>` : ''}${fields.includes('endDate') ? `<label>Until age <input name="endAge" type="number" value="${f.endAge ?? ''}"/></label>` : ''}` : ''}
+        ${fields.includes('owner') && state.persons.length ? `<label>Owner, or by age of <select name="personId">${personOptions(f.personId)}</select></label><label>From age <input name="startAge" type="number" value="${f.startAge ?? ''}"/></label><label>Until age <input name="endAge" type="number" value="${f.endAge ?? ''}"/></label>` : ''}
+        ${fields.includes('purpose') ? `<label>Purpose <select name="withdrawalPurpose">${PURPOSES.map(([val, t]) => `<option value="${val}"${(f.withdrawalPurpose || '') === val ? ' selected' : ''}>${t}</option>`).join('')}</select></label>` : ''}
+        ${fields.includes('owner') ? '<p class="sub" style="grid-column: span 2; margin:0">Drawing on an IRA, 401(k) or Roth (directly or as a fallback) needs its owner: their age decides whether a draw before 59½ carries the 10% penalty.</p>' : ''}
         ${fields.includes('fallbackAccountIds') ? `<label style="grid-column: span 2">${L.fallbackAccountIds} <select name="fallbackAccountIds" multiple size="3">${accountOptions(null, { types: ['ASSET'] }).replace(/value="([^"]+)"/g, (m, id) => `${m}${(f.fallbackAccountIds || []).includes(id) ? ' selected' : ''}`)}</select></label>` : ''}
       </div>
-      ${f.flowType === 'CONTRIBUTION' && !f.matchOf ? '<div class="row-actions"><button type="button" class="link-btn sm" data-add-match>+ Add employer match</button></div>' : ''}`;
+      ${f.scenarioFlowType === 'CONTRIBUTION' && !f.matchOf ? '<div class="row-actions"><button type="button" class="link-btn sm" data-add-match>+ Add employer match</button></div>' : ''}`;
     $('.head .link-btn', el).addEventListener('click', () => el.remove());
     // Refresh the hypothetical choices when opened: accounts may have been added or renamed since.
     $$('select[data-hypo=yes]', el).forEach((sel) => sel.addEventListener('focus', () => {
@@ -752,7 +759,7 @@ function openEditor(existing) {
       sel.insertAdjacentHTML('beforeend', hypoOptions(cur.startsWith('hypo:') ? cur.slice(5) : null, sel.hasAttribute('data-taxdeferred')));
       sel.value = cur;
     }));
-    $('[data-add-match]', el)?.addEventListener('click', () => addFlowEditor({ key: `new-${crypto.randomUUID()}`, flowType: 'CONTRIBUTION', matchOf: f.key, accountId: f.accountId, hypotheticalAccount: f.hypotheticalAccount ?? null, label: 'Employer match', percent: 50, fallbackAccountIds: [] }));
+    $('[data-add-match]', el)?.addEventListener('click', () => addFlowEditor({ key: `new-${crypto.randomUUID()}`, scenarioFlowType: 'CONTRIBUTION', matchOf: f.key, accountId: f.accountId, hypotheticalAccount: f.hypotheticalAccount ?? null, label: 'Employer match', percent: 50, fallbackAccountIds: [] }));
     $('#ed-flows', dlg).appendChild(el);
   }
 
@@ -771,6 +778,7 @@ function openEditor(existing) {
       <label>From (blank = run start) <input name="startDate" type="date" value="${o.startDate ?? ''}"/></label>
       <label>Last day <input name="endDate" type="date" value="${o.endDate ?? ''}"/></label>
       ${state.persons.length ? `<label>…or by age of <select name="personId">${personOptions(o.personId)}</select></label><label>from age <input name="startAge" type="number" value="${o.startAge ?? ''}"/></label><label>until age <input name="endAge" type="number" value="${o.endAge ?? ''}"/></label>` : ''}
+      <label>Only the stream of (blank = every stream) <input name="streamAmount" type="number" step="any" value="${o.streamAmount ?? ''}" title="When the merchant has several streams on the account, the amount of the one to override, as Upcoming lists it"/></label>
       <label>New amount <input name="amount" type="number" step="any" value="${o.amount ?? ''}"/></label>
       <label>Own growth % <input name="rate" type="number" step="any" value="${o.rate ?? ''}"/></label></div>`;
     $('.link-btn', el).addEventListener('click', () => el.remove());
@@ -827,7 +835,7 @@ function openEditor(existing) {
       incomeGrowthRate: numOrNull(form.incomeGrowthRate.value),
       taxRate: numOrNull(form.taxRate.value),
       volatility: numOrNull(form.volatility.value),
-      flows: $$('.flow-row', $('#ed-flows', dlg)).map((r) => {
+      scenarioFlows: $$('.flow-row', $('#ed-flows', dlg)).map((r) => {
         const f = r._flow;
         const personId = v(r, 'personId') || null;
         const startAge = personId ? numOrNull(v(r, 'startAge')) : null;
@@ -844,14 +852,16 @@ function openEditor(existing) {
           cadenceMonths: f.matchOf ? null : $('[name=cadenceMonths]', r) ? numOrNull(v(r, 'cadenceMonths')) : null,
           startDate: startAge != null ? null : $('[name=startDate]', r) ? v(r, 'startDate') || null : f.startDate ?? null,
           endDate: endAge != null ? null : $('[name=endDate]', r) ? v(r, 'endDate') || null : f.endDate ?? null,
-          ...(f.flowType === 'RMD' ? { amount: null, percent: null, rate: null, cadenceMonths: null, startDate: null, endDate: null, startAge: null, endAge: null } : {}),
+          ...(f.scenarioFlowType === 'RMD' ? { amount: null, percent: null, rate: null, cadenceMonths: null, startDate: null, endDate: null, startAge: null, endAge: null } : {}),
           // An RMD is dated by its person alone; every other flow names a person only with an age.
-          personId: f.flowType === 'RMD' ? personId : startAge != null || endAge != null ? personId : null,
+          // A WITHDRAWAL names its owner whether or not it is dated by age (a retirement account needs one).
+          personId: ['RMD', 'WITHDRAWAL'].includes(f.scenarioFlowType) ? personId : startAge != null || endAge != null ? personId : null,
           startAge, endAge,
+          withdrawalPurpose: f.scenarioFlowType === 'WITHDRAWAL' ? v(r, 'withdrawalPurpose') || null : null,
           fallbackAccountIds: $('[name=fallbackAccountIds]', r) ? [...$('[name=fallbackAccountIds]', r).selectedOptions].map((o) => o.value) : f.fallbackAccountIds || [],
         };
       }),
-      streamOverrides: $$('.ov-row', dlg).map((r) => {
+      scenarioStreamOverrides: $$('.ov-row', dlg).map((r) => {
         const personId = v(r, 'personId') || null;
         const endAge = personId ? numOrNull(v(r, 'endAge')) : null;
         const startAge = personId ? numOrNull(v(r, 'startAge')) : null;
@@ -860,9 +870,10 @@ function openEditor(existing) {
           startDate: startAge != null ? null : v(r, 'startDate') || null, startAge,
           endDate: endAge != null ? null : v(r, 'endDate') || null, personId: endAge != null || startAge != null ? personId : null, endAge,
           amount: numOrNull(v(r, 'amount')), rate: numOrNull(v(r, 'rate')),
+          streamAmount: v(r, 'merchantName').trim() ? numOrNull(v(r, 'streamAmount')) : null,
         };
       }),
-      accounts: $$('.acct-row', dlg).map((r) => {
+      scenarioAccounts: $$('.acct-row', dlg).map((r) => {
         const t = v(r, 'accountType'), coll = v(r, 'collateral');
         const onlyFor = (type, x) => (t === type ? x : null);
         return {
@@ -881,10 +892,10 @@ function openEditor(existing) {
     };
     // A match whose matched contribution was removed has nothing to follow, and a flow
     // can't name a hypothetical account that was removed.
-    const keys = new Set(out.flows.map((f) => f.key));
-    const acctKeys = new Set(out.accounts.map((a) => a.key));
-    out.flows = out.flows.filter((f) => (!f.matchOf || keys.has(f.matchOf)) && (!f.hypotheticalAccount || acctKeys.has(f.hypotheticalAccount)));
-    out.flows.forEach((f) => { if (f.hypotheticalTargetAccount && !acctKeys.has(f.hypotheticalTargetAccount)) f.hypotheticalTargetAccount = null; });
+    const keys = new Set(out.scenarioFlows.map((f) => f.key));
+    const acctKeys = new Set(out.scenarioAccounts.map((a) => a.key));
+    out.scenarioFlows = out.scenarioFlows.filter((f) => (!f.matchOf || keys.has(f.matchOf)) && (!f.hypotheticalAccount || acctKeys.has(f.hypotheticalAccount)));
+    out.scenarioFlows.forEach((f) => { if (f.hypotheticalTargetAccount && !acctKeys.has(f.hypotheticalTargetAccount)) f.hypotheticalTargetAccount = null; });
     const errBox = $('.dlg-body > .error', dlg); errBox.hidden = true;
     $('#ed-save', dlg).disabled = true;
     try {
