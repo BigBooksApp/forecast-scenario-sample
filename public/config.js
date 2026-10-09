@@ -1,6 +1,6 @@
 // BigBooks Forecast & Scenarios configuration.
 //
-// This app targets BigBooks production. To use another environment, change API
+// This app targets BigBooks staging. To use another environment, change API
 // and ISSUER together: a 401 from the API names its authorization server at
 // {API}/.well-known/oauth-protected-resource.
 //
@@ -8,12 +8,12 @@
 // registered at {ISSUER}/clients with this app's URL as a redirect URI.
 // No client secret goes here — this file ships to the browser.
 
-const ISSUER = 'https://www.bigbooks.app';   // the authorization server whose tokens the API accepts
+const ISSUER = 'https://staging.bigbooks.app';   // the authorization server whose tokens the API accepts
 
 export const CONFIG = {
   CLIENT_ID: '',                           // <-- your public client_id
 
-  API: 'https://api.bigbooks.app',
+  API: 'https://staging.bigbooks.app/api',
   ISSUER,
   AUTHORIZE_URL: `${ISSUER}/oauth2/authorize`,
   TOKEN_URL: `${ISSUER}/oauth2/token`,

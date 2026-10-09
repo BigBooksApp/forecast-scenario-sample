@@ -44,14 +44,14 @@ from the first:
 
 **BigBooks does not ship Plaid credentials and will not spend anyone else's.** Linking an account
 calls Plaid with **a client id and secret you stored yourself**, and the Plaid usage is billed to
-your Plaid account. Add them at **<https://www.bigbooks.app/data-secrets>** (sign-in required); you
+your Plaid account. Add them at **<https://staging.bigbooks.app/data-secrets>** (sign-in required); you
 get both from the [Plaid dashboard](https://dashboard.plaid.com/developers/keys). Without them the
 first call of the link flow fails with `400` and the error code `missing_credentials`, and
 the app says what to do.
 
 - Credentials are stored **per party**, and the party that matters is the one that **owns the
   OAuth client** this app signs in with: the account you were signed in as at
-  <https://www.bigbooks.app/clients> when you created the client.
+  <https://staging.bigbooks.app/clients> when you created the client.
 - **There is nowhere in this repository to put a Plaid secret**, and that is deliberate: anything
   in `config.js` ships to every browser that loads the page. The API accepts `X-Plaid-Client-ID`
   and `X-Plaid-Secret` headers as a fallback for server-side callers; a browser app must never
@@ -65,7 +65,7 @@ the app says what to do.
 Browser (this static app)
   │  1. Authorization Code + PKCE  ──►  {issuer}/oauth2/authorize + /oauth2/token
   │       (the issuer is discoverable: a 401 from the API points at
-  │        /.well-known/oauth-protected-resource → authorization_servers)
+  │        {API}/.well-known/oauth-protected-resource → authorization_servers)
   │  2. id_token `bigbooks:party` claim, or GET {issuer}/oauth2/userInfo  ──►  your party id
   │  3. GET /v1/forecast, /v1/upcoming, /v1/scenarios/…  ──►  every view (X-Acting-Party-ID)
   │  4. PUT/DELETE with If-Match: "<version>"  ──►  scenarios, people, planned transactions
@@ -103,8 +103,8 @@ python3 -m http.server 5174 --directory public
   every route in the spec's response shapes, so no account is needed. Its simulations compute at most 25 paths.
 - For live data, register a **public OAuth client** (PKCE) at `{issuer}/clients` with
   `http://localhost:5174/` as its redirect URI and the `openid profile email` scopes, and set
-  `CLIENT_ID` in [`public/config.js`](public/config.js). `API` (`https://api.bigbooks.app`) and
-  `ISSUER` (`https://www.bigbooks.app`) point at BigBooks production. The issuer's CORS allow-list is built from registered redirect URIs, so registering
+  `CLIENT_ID` in [`public/config.js`](public/config.js). `API` (`https://staging.bigbooks.app/api`) and
+  `ISSUER` (`https://staging.bigbooks.app`) point at BigBooks staging. The issuer's CORS allow-list is built from registered redirect URIs, so registering
   the redirect URI is the whole setup, and it takes about a minute to apply.
 - Store your Plaid credentials (above) before linking an account.
 - With `ALLOW_PASTED_TOKEN` on in `config.js`, the sign-in card also accepts a pasted access
